@@ -14,6 +14,7 @@ const envSchema = z.object({
   PAYMENT_NOTES: z.string().min(1),
   PORT: z.coerce.number().int().positive().default(3000),
   WEBAPP_BASE_URL: z.string().url().optional(),
+  TELEGRAM_PROXY_URL: z.string().url().optional(),
   SESSION_SECRET: z.string().min(32),
   UPLOAD_DIR: z.string().min(1).default("runtime/uploads"),
   APP_TZ: z.string().min(1).default("Asia/Tehran"),
@@ -31,6 +32,7 @@ export type AppConfig = {
   paymentNotes: string;
   port: number;
   webAppBaseUrl: string;
+  telegramProxyUrl?: string;
   sessionSecret: string;
   uploadDir: string;
   appTz: string;
@@ -58,6 +60,7 @@ export function loadConfig(): AppConfig {
     paymentNotes: parsed.PAYMENT_NOTES,
     port: parsed.PORT,
     webAppBaseUrl: (parsed.WEBAPP_BASE_URL ?? `http://localhost:${parsed.PORT}`).replace(/\/+$/, ""),
+    telegramProxyUrl: parsed.TELEGRAM_PROXY_URL,
     sessionSecret: parsed.SESSION_SECRET,
     uploadDir: parsed.UPLOAD_DIR,
     appTz: parsed.APP_TZ,

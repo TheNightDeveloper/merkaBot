@@ -11,7 +11,7 @@ const logger_1 = require("./infra/logger");
 const gateway_1 = require("./infra/3xui/gateway");
 const setup_1 = require("./bot/setup");
 const server_1 = require("./http/server");
-function createApp(config, db, persist) {
+async function createApp(config, db, persist) {
     const gateway = new gateway_1.ThreeXUiGateway(config);
     const userService = new user_service_1.UserService(db, config.adminIds, persist);
     const planService = new plan_service_1.PlanService(db);
@@ -28,7 +28,13 @@ function createApp(config, db, persist) {
         supportService,
         gateway
     };
-    const bot = new telegraf_1.Telegraf(config.botToken);
+    const bot = new telegraf_1.Telegraf(config.botToken, {
+        telegram: config.telegramProxyUrl
+            ? {
+                agent: await createTelegramProxyAgent(config.telegramProxyUrl)
+            }
+            : undefined
+    });
     bot.use((0, telegraf_1.session)({ defaultSession: () => ({}) }));
     (0, setup_1.buildBot)(bot, services);
     const server = (0, server_1.createHttpServer)(config, services, bot);
@@ -39,4 +45,8 @@ function createApp(config, db, persist) {
         });
     });
     return { bot, services, server };
+}
+async function createTelegramProxyAgent(proxyUrl) {
+    const { SocksProxyAgent } = await import("socks-proxy-agent");
+    return new SocksProxyAgent(proxyUrl);
 }

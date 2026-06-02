@@ -14,7 +14,7 @@ async function main() {
     const { db, sqlite, persist, close } = await (0, client_1.createDb)(config);
     (0, bootstrap_1.bootstrapDatabase)(sqlite);
     await persist();
-    const { bot, services, server } = (0, app_1.createApp)(config, db, persist);
+    const { bot, services, server } = await (0, app_1.createApp)(config, db, persist);
     logger_1.logger.info("Checking 3x-ui access");
     try {
         await (0, verify_access_1.verifyPanelAccess)(services.gateway);

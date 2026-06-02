@@ -26,11 +26,11 @@ export type AppServices = {
   gateway: ThreeXUiGateway;
 };
 
-export function createApp(
+export async function createApp(
   config: AppConfig,
   db: AppDatabase,
   persist: () => Promise<void>
-): { bot: Telegraf<BotContext>; services: AppServices; server: Server } {
+): Promise<{ bot: Telegraf<BotContext>; services: AppServices; server: Server }> {
   const gateway = new ThreeXUiGateway(config);
   const userService = new UserService(db, config.adminIds, persist);
   const planService = new PlanService(db);
@@ -49,7 +49,13 @@ export function createApp(
     gateway
   };
 
-  const bot = new Telegraf<BotContext>(config.botToken);
+  const bot = new Telegraf<BotContext>(config.botToken, {
+    telegram: config.telegramProxyUrl
+      ? {
+          agent: await createTelegramProxyAgent(config.telegramProxyUrl)
+        }
+      : undefined
+  });
   bot.use(session({ defaultSession: (): BotSession => ({}) }));
 
   buildBot(bot, services);
@@ -63,4 +69,9 @@ export function createApp(
   });
 
   return { bot, services, server };
+}
+
+async function createTelegramProxyAgent(proxyUrl: string) {
+  const { SocksProxyAgent } = await import("socks-proxy-agent");
+  return new SocksProxyAgent(proxyUrl);
 }

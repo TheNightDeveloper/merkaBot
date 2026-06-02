@@ -14,7 +14,7 @@ async function main() {
   bootstrapDatabase(sqlite);
   await persist();
 
-  const { bot, services, server } = createApp(config, db, persist);
+  const { bot, services, server } = await createApp(config, db, persist);
 
   logger.info("Checking 3x-ui access");
   try {
