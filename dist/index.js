@@ -14,17 +14,83 @@ async function main() {
     const { db, sqlite, persist, close } = await (0, client_1.createDb)(config);
     (0, bootstrap_1.bootstrapDatabase)(sqlite);
     await persist();
-    const { bot, services } = (0, app_1.createApp)(config, db, persist);
+    const { bot, services, server } = (0, app_1.createApp)(config, db, persist);
     logger_1.logger.info("Checking 3x-ui access");
-    await (0, verify_access_1.verifyPanelAccess)(services.gateway);
-    logger_1.logger.info("Launching Telegram bot");
-    await bot.launch(() => {
-        (0, scheduler_1.startScheduler)(bot, services);
-        logger_1.logger.info("MerkaBot started");
+    try {
+        await (0, verify_access_1.verifyPanelAccess)(services.gateway);
+    }
+    catch (error) {
+        if (!isLocalWebAppUrl(config.webAppBaseUrl)) {
+            throw error;
+        }
+        logger_1.logger.warn("3x-ui access check failed during local startup; continuing with web app preview", {
+            error: error instanceof Error ? error.message : String(error),
+            webAppBaseUrl: config.webAppBaseUrl
+        });
+    }
+    await new Promise((resolve) => {
+        server.listen(config.port, () => {
+            logger_1.logger.info("HTTP server started", {
+                port: config.port,
+                webAppBaseUrl: config.webAppBaseUrl
+            });
+            resolve();
+        });
     });
+    logger_1.logger.info("Launching Telegram bot");
+    let botStarted = false;
+    try {
+        await bot.launch();
+        botStarted = true;
+        (0, scheduler_1.startScheduler)(bot, services);
+        if (config.webAppBaseUrl.startsWith("https://")) {
+            await bot.telegram
+                .setChatMenuButton({
+                menuButton: {
+                    type: "web_app",
+                    text: "پنل MerkaBot",
+                    web_app: {
+                        url: config.webAppBaseUrl
+                    }
+                }
+            })
+                .catch((error) => {
+                logger_1.logger.warn("Failed to set bot menu button", {
+                    error: error instanceof Error ? error.message : String(error)
+                });
+            });
+        }
+        else {
+            logger_1.logger.warn("Skipping Telegram web_app menu button because WEBAPP_BASE_URL is not HTTPS", {
+                webAppBaseUrl: config.webAppBaseUrl
+            });
+        }
+        logger_1.logger.info("MerkaBot started");
+    }
+    catch (error) {
+        logger_1.logger.warn("Telegram bot launch failed; HTTP server will stay online", {
+            error: error instanceof Error ? error.message : String(error)
+        });
+        logger_1.logger.info("MerkaBot web app started in degraded mode");
+    }
     const shutdown = async (signal) => {
         logger_1.logger.info("Shutting down", { signal });
-        bot.stop(signal);
+        await new Promise((resolve, reject) => {
+            server.close((error) => {
+                if (error) {
+                    reject(error);
+                    return;
+                }
+                resolve();
+            });
+        }).catch((error) => {
+            logger_1.logger.warn("HTTP server shutdown failed", {
+                error: error instanceof Error ? error.message : String(error)
+            });
+        });
+        if (botStarted) {
+            bot.stop(signal);
+        }
         await close();
         process.exit(0);
     };
@@ -41,3 +107,6 @@ main().catch((error) => {
     });
     process.exit(1);
 });
+function isLocalWebAppUrl(value) {
+    return value.startsWith("http://localhost:") || value.startsWith("http://127.0.0.1:");
+}

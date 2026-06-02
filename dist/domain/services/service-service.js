@@ -182,6 +182,17 @@ class ServiceService {
             .where((0, drizzle_orm_1.eq)(schema_1.services.userId, userId))
             .orderBy((0, drizzle_orm_1.desc)(schema_1.services.createdAt));
     }
+    async listServicesWithPlanForUserId(userId) {
+        return this.db
+            .select({
+            service: selectors_1.serviceColumns,
+            plan: selectors_1.planColumns
+        })
+            .from(schema_1.services)
+            .innerJoin(schema_1.plans, (0, drizzle_orm_1.eq)(schema_1.services.planCode, schema_1.plans.code))
+            .where((0, drizzle_orm_1.eq)(schema_1.services.userId, userId))
+            .orderBy((0, drizzle_orm_1.desc)(schema_1.services.createdAt));
+    }
     async listServicesForTelegramUser(telegramId) {
         const user = await this.userService.getByTelegramId(telegramId);
         if (!user) {
@@ -196,6 +207,18 @@ class ServiceService {
             .where((0, drizzle_orm_1.eq)(schema_1.services.id, serviceId))
             .limit(1);
         return rows[0] ?? null;
+    }
+    async getServiceWithPlanForUserId(userId, serviceId) {
+        return this.db
+            .select({
+            service: selectors_1.serviceColumns,
+            plan: selectors_1.planColumns
+        })
+            .from(schema_1.services)
+            .innerJoin(schema_1.plans, (0, drizzle_orm_1.eq)(schema_1.services.planCode, schema_1.plans.code))
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.services.id, serviceId), (0, drizzle_orm_1.eq)(schema_1.services.userId, userId)))
+            .limit(1)
+            .then((rows) => rows[0] ?? null);
     }
     async createRenewOrder(telegramId, serviceId) {
         const user = await this.userService.getByTelegramId(telegramId);

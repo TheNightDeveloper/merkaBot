@@ -10,6 +10,7 @@ const user_service_1 = require("./domain/users/user-service");
 const logger_1 = require("./infra/logger");
 const gateway_1 = require("./infra/3xui/gateway");
 const setup_1 = require("./bot/setup");
+const server_1 = require("./http/server");
 function createApp(config, db, persist) {
     const gateway = new gateway_1.ThreeXUiGateway(config);
     const userService = new user_service_1.UserService(db, config.adminIds, persist);
@@ -30,11 +31,12 @@ function createApp(config, db, persist) {
     const bot = new telegraf_1.Telegraf(config.botToken);
     bot.use((0, telegraf_1.session)({ defaultSession: () => ({}) }));
     (0, setup_1.buildBot)(bot, services);
+    const server = (0, server_1.createHttpServer)(config, services, bot);
     bot.catch((error) => {
         logger_1.logger.error("Unhandled bot error", {
             error: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack : undefined
         });
     });
-    return { bot, services };
+    return { bot, services, server };
 }

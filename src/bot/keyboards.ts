@@ -7,6 +7,12 @@ export function buildMainKeyboard() {
   ]).resize();
 }
 
+export function buildWebAppKeyboard(url: string) {
+  return Markup.inlineKeyboard([
+    [Markup.button.webApp("ورود به پنل MerkaBot", url)]
+  ]);
+}
+
 export function buildPlansKeyboard(plans: Array<{ code: string; title: string; priceLabel: string }>) {
   return Markup.inlineKeyboard(
     plans.map((plan) => [

@@ -56,6 +56,14 @@ class UserService {
             .limit(1);
         return rows[0] ?? null;
     }
+    async getById(userId) {
+        const rows = await this.db
+            .select(selectors_1.userColumns)
+            .from(schema_1.users)
+            .where((0, drizzle_orm_1.eq)(schema_1.users.id, userId))
+            .limit(1);
+        return rows[0] ?? null;
+    }
     async markTrialUsed(userId) {
         await this.db
             .update(schema_1.users)

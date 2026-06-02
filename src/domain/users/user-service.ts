@@ -67,6 +67,16 @@ export class UserService {
     return rows[0] ?? null;
   }
 
+  async getById(userId: number) {
+    const rows = await this.db
+      .select(userColumns)
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    return rows[0] ?? null;
+  }
+
   async markTrialUsed(userId: number): Promise<void> {
     await this.db
       .update(users)

@@ -1,0 +1,105 @@
+@import url("https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap");
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  font-family: "Vazirmatn", "Segoe UI", Tahoma, sans-serif;
+  --app-bg: #f6f3ee;
+  --app-surface: #ffffff;
+  --app-surface-muted: #efe7da;
+  --app-border: #d8d0c4;
+  --app-text: #111827;
+  --app-text-muted: #6b7280;
+  --app-accent: #111827;
+  --app-accent-contrast: #ffffff;
+  --app-link: #2563eb;
+  --app-danger: #b91c1c;
+  --app-danger-soft: #fee2e2;
+  --app-success: #166534;
+  --app-success-soft: #dcfce7;
+  --app-warning: #92400e;
+  --app-warning-soft: #fef3c7;
+  --app-info: #334155;
+  --app-info-soft: #e2e8f0;
+  --app-overlay: rgba(15, 23, 42, 0.46);
+  --app-selection: rgba(37, 99, 235, 0.18);
+  --app-scrollbar: rgba(100, 116, 139, 0.35);
+  --app-scrollbar-track: transparent;
+  --app-card-shadow: 0 24px 80px -48px rgba(15, 23, 42, 0.35);
+  --app-bg-glow: rgba(148, 163, 184, 0.16);
+  --app-bg-wash: rgba(255, 255, 255, 0.72);
+}
+
+:root[data-scheme="dark"] {
+  color-scheme: dark;
+  --app-overlay: rgba(2, 6, 23, 0.7);
+  --app-selection: rgba(125, 211, 252, 0.2);
+  --app-scrollbar: rgba(148, 163, 184, 0.28);
+  --app-card-shadow: 0 26px 90px -54px rgba(2, 6, 23, 0.82);
+  --app-bg-glow: rgba(56, 189, 248, 0.08);
+  --app-bg-wash: rgba(15, 23, 42, 0.12);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+html {
+  background: var(--app-bg);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, var(--app-bg-glow), transparent 36%),
+    linear-gradient(180deg, var(--app-bg-wash), rgba(255, 255, 255, 0)),
+    var(--app-bg);
+  color: var(--app-text);
+  direction: rtl;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    background 220ms ease;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::selection {
+  background: var(--app-selection);
+}
+
+.app-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--app-scrollbar) var(--app-scrollbar-track);
+}
+
+.app-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.app-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--app-scrollbar);
+}
+
+.app-scrollbar::-webkit-scrollbar-track {
+  background: var(--app-scrollbar-track);
+}

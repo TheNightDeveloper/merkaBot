@@ -4,10 +4,25 @@ exports.buildBot = buildBot;
 const keyboards_1 = require("./keyboards");
 const logger_1 = require("../infra/logger");
 const format_1 = require("../utils/format");
+const notifications_1 = require("./notifications");
 function buildBot(bot, services) {
     bot.start(async (ctx) => {
         const user = await services.userService.ensureUser(toTelegramProfile(ctx));
-        await ctx.reply(`سلام ${user.displayName}\nبه MerkaBot خوش آمدید.`, { reply_markup: (0, keyboards_1.buildMainKeyboard)().reply_markup });
+        const canUseWebApp = isHttpsWebAppUrl(services.config.webAppBaseUrl);
+        if (canUseWebApp) {
+            await ctx.reply(`سلام ${user.displayName}\nبرای مدیریت سرویس‌ها، خرید و پشتیبانی وارد پنل MerkaBot شوید.`, (0, keyboards_1.buildWebAppKeyboard)(services.config.webAppBaseUrl));
+            await ctx.reply("منوی قدیمی بات هم برای مواقع ضروری همچنان در دسترس است.", {
+                reply_markup: (0, keyboards_1.buildMainKeyboard)().reply_markup
+            });
+            return;
+        }
+        await ctx.reply([
+            `سلام ${user.displayName}`,
+            "mini app در تلگرام فقط با آدرس HTTPS باز می‌شود.",
+            `برای تست لوکال، این آدرس را در مرورگر سیستم باز کنید: ${services.config.webAppBaseUrl}`
+        ].join("\n"), {
+            reply_markup: (0, keyboards_1.buildMainKeyboard)().reply_markup
+        });
     });
     bot.command("cancel", async (ctx) => {
         ctx.session.pendingAction = undefined;
@@ -180,7 +195,7 @@ function buildBot(bot, services) {
             return;
         }
         for (const item of pendingOrders) {
-            await ctx.reply(describeOrder(item.order.id, item.user.displayName, item.user.telegramId, item.plan.title, item.order.receiptText), (0, keyboards_1.buildAdminOrderKeyboard)(item.order.id, item.user.telegramId));
+            await ctx.reply((0, notifications_1.describeOrder)(item.order.id, item.user.displayName, item.user.telegramId, item.plan.title, item.order.receiptText), (0, keyboards_1.buildAdminOrderKeyboard)(item.order.id, item.user.telegramId));
         }
         await ctx.answerCbQuery();
     });
@@ -245,7 +260,7 @@ function buildBot(bot, services) {
             });
             ctx.session.pendingAction = undefined;
             await ctx.reply("رسید شما ثبت شد و برای بررسی ادمین ارسال می شود.");
-            await notifyAdminsOfOrder(bot, services, order.id);
+            await (0, notifications_1.notifyAdminsOfOrder)(bot, services, order.id);
             return;
         }
         if (pendingAction.kind === "support_message") {
@@ -260,7 +275,7 @@ function buildBot(bot, services) {
             await services.supportService.addUserMessage(pendingAction.ticketId, user.id, ctx.message.text.trim());
             ctx.session.pendingAction = undefined;
             await ctx.reply("پیام شما برای پشتیبانی ارسال شد.");
-            await notifyAdminsOfTicket(bot, services, pendingAction.ticketId, ctx.message.text.trim());
+            await (0, notifications_1.notifyAdminsOfTicket)(bot, services, pendingAction.ticketId, ctx.message.text.trim());
             return;
         }
         if (pendingAction.kind === "admin_order_note") {
@@ -361,7 +376,7 @@ function buildBot(bot, services) {
             ticketId: ticket.id
         };
         await ctx.reply(`تیکت #${ticket.id} آماده است. پیام خود را ارسال کنید.`);
-        await notifyAdminsOfTicket(bot, services, ticket.id, `تیکت توسط ${user.displayName} باز شد.`);
+        await (0, notifications_1.notifyAdminsOfTicket)(bot, services, ticket.id, `تیکت توسط ${user.displayName} باز شد.`);
     });
 }
 async function ensureKnownUser(ctx, services) {
@@ -383,47 +398,9 @@ function toTelegramProfile(ctx) {
         displayName
     };
 }
-async function notifyAdminsOfOrder(bot, services, orderId) {
-    const bundle = await services.orderService.getOrderWithRelations(orderId);
-    if (!bundle) {
-        return;
-    }
-    const message = describeOrder(orderId, bundle.user.displayName, bundle.user.telegramId, bundle.plan.title, bundle.order.receiptText);
-    for (const adminId of services.config.adminIds) {
-        if (bundle.order.receiptFileId) {
-            await bot.telegram.sendPhoto(adminId, bundle.order.receiptFileId, {
-                caption: message,
-                ...(0, keyboards_1.buildAdminOrderKeyboard)(orderId, bundle.user.telegramId)
-            });
-            continue;
-        }
-        await bot.telegram.sendMessage(adminId, message, (0, keyboards_1.buildAdminOrderKeyboard)(orderId, bundle.user.telegramId));
-    }
-}
-async function notifyAdminsOfTicket(bot, services, ticketId, summary) {
-    const bundle = await services.supportService.getTicketWithUser(ticketId);
-    if (!bundle) {
-        return;
-    }
-    const message = [
-        `تیکت #${ticketId}`,
-        `کاربر: ${bundle.user.displayName}`,
-        `تلگرام: ${bundle.user.telegramId}`,
-        summary
-    ].join("\n");
-    for (const adminId of services.config.adminIds) {
-        await bot.telegram.sendMessage(adminId, message, (0, keyboards_1.buildAdminTicketKeyboard)(ticketId, bundle.user.telegramId));
-    }
-}
-function describeOrder(orderId, displayName, telegramId, planTitle, receiptText) {
-    return [
-        `سفارش #${orderId}`,
-        `کاربر: ${displayName}`,
-        `تلگرام: ${telegramId}`,
-        `پلن: ${planTitle}`,
-        receiptText ? `توضیح/کد تراکنش: ${receiptText}` : "رسید تصویری ارسال شده است."
-    ].join("\n");
-}
 function isMainMenuText(text) {
     return ["خرید سرویس", "اکانت تست", "سرویس های من", "پشتیبانی"].includes(text);
+}
+function isHttpsWebAppUrl(value) {
+    return value.startsWith("https://");
 }

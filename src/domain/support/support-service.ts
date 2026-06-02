@@ -20,10 +20,16 @@ export class SupportService {
       throw new Error("User not found.");
     }
 
+    return this.getOrCreateOpenTicketForUserId(user.id);
+  }
+
+  async getOrCreateOpenTicketForUserId(userId: number) {
+    const now = new Date();
+
     const existingRows = await this.db
       .select(ticketColumns)
       .from(tickets)
-      .where(and(eq(tickets.userId, user.id), eq(tickets.status, "open")))
+      .where(and(eq(tickets.userId, userId), eq(tickets.status, "open")))
       .orderBy(desc(tickets.createdAt))
       .limit(1);
 
@@ -33,11 +39,10 @@ export class SupportService {
       return existing;
     }
 
-    const now = new Date();
     const [created] = await this.db
       .insert(tickets)
       .values(withoutUndefined({
-        userId: user.id,
+        userId,
         status: "open",
         createdAt: now,
         updatedAt: now
@@ -135,5 +140,38 @@ export class SupportService {
       .where(eq(tickets.id, ticketId))
       .limit(1)
       .then((rows) => rows[0] ?? null);
+  }
+
+  async listTicketsForUser(userId: number) {
+    return this.db
+      .select(ticketColumns)
+      .from(tickets)
+      .where(eq(tickets.userId, userId))
+      .orderBy(desc(tickets.updatedAt));
+  }
+
+  async getTicketForUser(ticketId: number, userId: number) {
+    const ticketRows = await this.db
+      .select(ticketColumns)
+      .from(tickets)
+      .where(and(eq(tickets.id, ticketId), eq(tickets.userId, userId)))
+      .limit(1);
+
+    const ticket = ticketRows[0] ?? null;
+
+    if (!ticket) {
+      return null;
+    }
+
+    const messages = await this.db
+      .select(ticketMessageColumns)
+      .from(ticketMessages)
+      .where(eq(ticketMessages.ticketId, ticket.id))
+      .orderBy(ticketMessages.createdAt);
+
+    return {
+      ticket,
+      messages
+    };
   }
 }

@@ -2,16 +2,36 @@ import { Telegraf } from "telegraf";
 
 import type { AppServices } from "../app";
 import type { BotContext } from "./context";
-import { buildAdminMenuKeyboard, buildAdminOrderKeyboard, buildAdminTicketKeyboard, buildMainKeyboard, buildPlansKeyboard, buildServiceKeyboard } from "./keyboards";
+import { buildAdminMenuKeyboard, buildAdminOrderKeyboard, buildAdminTicketKeyboard, buildMainKeyboard, buildPlansKeyboard, buildServiceKeyboard, buildWebAppKeyboard } from "./keyboards";
 import { logger } from "../infra/logger";
 import { formatBytes, formatDate, formatServiceStatus } from "../utils/format";
+import { describeOrder, notifyAdminsOfOrder, notifyAdminsOfTicket } from "./notifications";
 
 export function buildBot(bot: Telegraf<BotContext>, services: AppServices) {
   bot.start(async (ctx) => {
     const user = await services.userService.ensureUser(toTelegramProfile(ctx));
+    const canUseWebApp = isHttpsWebAppUrl(services.config.webAppBaseUrl);
+
+    if (canUseWebApp) {
+      await ctx.reply(
+        `سلام ${user.displayName}\nبرای مدیریت سرویس‌ها، خرید و پشتیبانی وارد پنل MerkaBot شوید.`,
+        buildWebAppKeyboard(services.config.webAppBaseUrl)
+      );
+      await ctx.reply("منوی قدیمی بات هم برای مواقع ضروری همچنان در دسترس است.", {
+        reply_markup: buildMainKeyboard().reply_markup
+      });
+      return;
+    }
+
     await ctx.reply(
-      `سلام ${user.displayName}\nبه MerkaBot خوش آمدید.`,
-      { reply_markup: buildMainKeyboard().reply_markup }
+      [
+        `سلام ${user.displayName}`,
+        "mini app در تلگرام فقط با آدرس HTTPS باز می‌شود.",
+        `برای تست لوکال، این آدرس را در مرورگر سیستم باز کنید: ${services.config.webAppBaseUrl}`
+      ].join("\n"),
+      {
+        reply_markup: buildMainKeyboard().reply_markup
+      }
     );
   });
 
@@ -492,68 +512,10 @@ function toTelegramProfile(ctx: BotContext) {
   };
 }
 
-async function notifyAdminsOfOrder(bot: Telegraf<BotContext>, services: AppServices, orderId: number) {
-  const bundle = await services.orderService.getOrderWithRelations(orderId);
-
-  if (!bundle) {
-    return;
-  }
-
-  const message = describeOrder(orderId, bundle.user.displayName, bundle.user.telegramId, bundle.plan.title, bundle.order.receiptText);
-
-  for (const adminId of services.config.adminIds) {
-    if (bundle.order.receiptFileId) {
-      await bot.telegram.sendPhoto(adminId, bundle.order.receiptFileId, {
-        caption: message,
-        ...buildAdminOrderKeyboard(orderId, bundle.user.telegramId)
-      });
-      continue;
-    }
-
-    await bot.telegram.sendMessage(adminId, message, buildAdminOrderKeyboard(orderId, bundle.user.telegramId));
-  }
-}
-
-async function notifyAdminsOfTicket(
-  bot: Telegraf<BotContext>,
-  services: AppServices,
-  ticketId: number,
-  summary: string
-) {
-  const bundle = await services.supportService.getTicketWithUser(ticketId);
-
-  if (!bundle) {
-    return;
-  }
-
-  const message = [
-    `تیکت #${ticketId}`,
-    `کاربر: ${bundle.user.displayName}`,
-    `تلگرام: ${bundle.user.telegramId}`,
-    summary
-  ].join("\n");
-
-  for (const adminId of services.config.adminIds) {
-    await bot.telegram.sendMessage(adminId, message, buildAdminTicketKeyboard(ticketId, bundle.user.telegramId));
-  }
-}
-
-function describeOrder(
-  orderId: number,
-  displayName: string,
-  telegramId: number,
-  planTitle: string,
-  receiptText?: string | null
-) {
-  return [
-    `سفارش #${orderId}`,
-    `کاربر: ${displayName}`,
-    `تلگرام: ${telegramId}`,
-    `پلن: ${planTitle}`,
-    receiptText ? `توضیح/کد تراکنش: ${receiptText}` : "رسید تصویری ارسال شده است."
-  ].join("\n");
-}
-
 function isMainMenuText(text: string) {
   return ["خرید سرویس", "اکانت تست", "سرویس های من", "پشتیبانی"].includes(text);
+}
+
+function isHttpsWebAppUrl(value: string) {
+  return value.startsWith("https://");
 }

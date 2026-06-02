@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildMainKeyboard = buildMainKeyboard;
+exports.buildWebAppKeyboard = buildWebAppKeyboard;
 exports.buildPlansKeyboard = buildPlansKeyboard;
 exports.buildServiceKeyboard = buildServiceKeyboard;
 exports.buildAdminOrderKeyboard = buildAdminOrderKeyboard;
@@ -12,6 +13,11 @@ function buildMainKeyboard() {
         ["خرید سرویس", "اکانت تست"],
         ["سرویس های من", "پشتیبانی"]
     ]).resize();
+}
+function buildWebAppKeyboard(url) {
+    return telegraf_1.Markup.inlineKeyboard([
+        [telegraf_1.Markup.button.webApp("ورود به پنل MerkaBot", url)]
+    ]);
 }
 function buildPlansKeyboard(plans) {
     return telegraf_1.Markup.inlineKeyboard(plans.map((plan) => [

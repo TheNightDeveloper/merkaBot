@@ -1,3 +1,5 @@
+import type { Server } from "node:http";
+
 import { session, Telegraf } from "telegraf";
 
 import type { AppConfig } from "./config";
@@ -11,6 +13,7 @@ import { logger } from "./infra/logger";
 import { ThreeXUiGateway } from "./infra/3xui/gateway";
 import { buildBot } from "./bot/setup";
 import type { BotContext, BotSession } from "./bot/context";
+import { createHttpServer } from "./http/server";
 
 export type AppServices = {
   config: AppConfig;
@@ -27,7 +30,7 @@ export function createApp(
   config: AppConfig,
   db: AppDatabase,
   persist: () => Promise<void>
-) {
+): { bot: Telegraf<BotContext>; services: AppServices; server: Server } {
   const gateway = new ThreeXUiGateway(config);
   const userService = new UserService(db, config.adminIds, persist);
   const planService = new PlanService(db);
@@ -50,6 +53,7 @@ export function createApp(
   bot.use(session({ defaultSession: (): BotSession => ({}) }));
 
   buildBot(bot, services);
+  const server = createHttpServer(config, services, bot);
 
   bot.catch((error) => {
     logger.error("Unhandled bot error", {
@@ -58,5 +62,5 @@ export function createApp(
     });
   });
 
-  return { bot, services };
+  return { bot, services, server };
 }

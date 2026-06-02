@@ -86,6 +86,35 @@ class OrderService {
             .limit(1)
             .then((rows) => rows[0] ?? null);
     }
+    async getOrderForUser(orderId, userId) {
+        return this.db
+            .select({
+            order: selectors_1.orderColumns,
+            plan: selectors_1.planColumns,
+            user: selectors_1.userColumns,
+            service: selectors_1.serviceColumns
+        })
+            .from(schema_1.orders)
+            .innerJoin(schema_1.plans, (0, drizzle_orm_1.eq)(schema_1.orders.planCode, schema_1.plans.code))
+            .innerJoin(schema_1.users, (0, drizzle_orm_1.eq)(schema_1.orders.userId, schema_1.users.id))
+            .leftJoin(schema_1.services, (0, drizzle_orm_1.eq)(schema_1.orders.targetServiceId, schema_1.services.id))
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.orders.id, orderId), (0, drizzle_orm_1.eq)(schema_1.orders.userId, userId)))
+            .limit(1)
+            .then((rows) => rows[0] ?? null);
+    }
+    async listOrdersForUser(userId) {
+        return this.db
+            .select({
+            order: selectors_1.orderColumns,
+            plan: selectors_1.planColumns,
+            service: selectors_1.serviceColumns
+        })
+            .from(schema_1.orders)
+            .innerJoin(schema_1.plans, (0, drizzle_orm_1.eq)(schema_1.orders.planCode, schema_1.plans.code))
+            .leftJoin(schema_1.services, (0, drizzle_orm_1.eq)(schema_1.orders.targetServiceId, schema_1.services.id))
+            .where((0, drizzle_orm_1.eq)(schema_1.orders.userId, userId))
+            .orderBy((0, drizzle_orm_1.desc)(schema_1.orders.createdAt));
+    }
     async listPendingOrders() {
         return this.db
             .select({

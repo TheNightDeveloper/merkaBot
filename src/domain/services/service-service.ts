@@ -209,6 +209,18 @@ export class ServiceService {
       .orderBy(desc(services.createdAt));
   }
 
+  async listServicesWithPlanForUserId(userId: number) {
+    return this.db
+      .select({
+        service: serviceColumns,
+        plan: planColumns
+      })
+      .from(services)
+      .innerJoin(plans, eq(services.planCode, plans.code))
+      .where(eq(services.userId, userId))
+      .orderBy(desc(services.createdAt));
+  }
+
   async listServicesForTelegramUser(telegramId: number) {
     const user = await this.userService.getByTelegramId(telegramId);
     if (!user) {
@@ -226,6 +238,19 @@ export class ServiceService {
       .limit(1);
 
     return rows[0] ?? null;
+  }
+
+  async getServiceWithPlanForUserId(userId: number, serviceId: number) {
+    return this.db
+      .select({
+        service: serviceColumns,
+        plan: planColumns
+      })
+      .from(services)
+      .innerJoin(plans, eq(services.planCode, plans.code))
+      .where(and(eq(services.id, serviceId), eq(services.userId, userId)))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
   }
 
   async createRenewOrder(telegramId: number, serviceId: number) {

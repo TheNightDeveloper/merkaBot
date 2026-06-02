@@ -19,21 +19,24 @@ class SupportService {
         if (!user) {
             throw new Error("User not found.");
         }
+        return this.getOrCreateOpenTicketForUserId(user.id);
+    }
+    async getOrCreateOpenTicketForUserId(userId) {
+        const now = new Date();
         const existingRows = await this.db
             .select(selectors_1.ticketColumns)
             .from(schema_1.tickets)
-            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.tickets.userId, user.id), (0, drizzle_orm_1.eq)(schema_1.tickets.status, "open")))
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.tickets.userId, userId), (0, drizzle_orm_1.eq)(schema_1.tickets.status, "open")))
             .orderBy((0, drizzle_orm_1.desc)(schema_1.tickets.createdAt))
             .limit(1);
         const existing = existingRows[0] ?? null;
         if (existing) {
             return existing;
         }
-        const now = new Date();
         const [created] = await this.db
             .insert(schema_1.tickets)
             .values((0, sanitize_1.withoutUndefined)({
-            userId: user.id,
+            userId,
             status: "open",
             createdAt: now,
             updatedAt: now
@@ -120,6 +123,33 @@ class SupportService {
             .where((0, drizzle_orm_1.eq)(schema_1.tickets.id, ticketId))
             .limit(1)
             .then((rows) => rows[0] ?? null);
+    }
+    async listTicketsForUser(userId) {
+        return this.db
+            .select(selectors_1.ticketColumns)
+            .from(schema_1.tickets)
+            .where((0, drizzle_orm_1.eq)(schema_1.tickets.userId, userId))
+            .orderBy((0, drizzle_orm_1.desc)(schema_1.tickets.updatedAt));
+    }
+    async getTicketForUser(ticketId, userId) {
+        const ticketRows = await this.db
+            .select(selectors_1.ticketColumns)
+            .from(schema_1.tickets)
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.tickets.id, ticketId), (0, drizzle_orm_1.eq)(schema_1.tickets.userId, userId)))
+            .limit(1);
+        const ticket = ticketRows[0] ?? null;
+        if (!ticket) {
+            return null;
+        }
+        const messages = await this.db
+            .select(selectors_1.ticketMessageColumns)
+            .from(schema_1.ticketMessages)
+            .where((0, drizzle_orm_1.eq)(schema_1.ticketMessages.ticketId, ticket.id))
+            .orderBy(schema_1.ticketMessages.createdAt);
+        return {
+            ticket,
+            messages
+        };
     }
 }
 exports.SupportService = SupportService;

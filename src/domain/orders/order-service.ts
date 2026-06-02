@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 import type { AppDatabase } from "../../infra/db/client";
 import { orderColumns, planColumns, serviceColumns, userColumns } from "../../infra/db/selectors";
@@ -103,6 +103,37 @@ export class OrderService {
       .where(eq(orders.id, orderId))
       .limit(1)
       .then((rows) => rows[0] ?? null);
+  }
+
+  async getOrderForUser(orderId: number, userId: number) {
+    return this.db
+      .select({
+        order: orderColumns,
+        plan: planColumns,
+        user: userColumns,
+        service: serviceColumns
+      })
+      .from(orders)
+      .innerJoin(plans, eq(orders.planCode, plans.code))
+      .innerJoin(users, eq(orders.userId, users.id))
+      .leftJoin(services, eq(orders.targetServiceId, services.id))
+      .where(and(eq(orders.id, orderId), eq(orders.userId, userId)))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+  }
+
+  async listOrdersForUser(userId: number) {
+    return this.db
+      .select({
+        order: orderColumns,
+        plan: planColumns,
+        service: serviceColumns
+      })
+      .from(orders)
+      .innerJoin(plans, eq(orders.planCode, plans.code))
+      .leftJoin(services, eq(orders.targetServiceId, services.id))
+      .where(eq(orders.userId, userId))
+      .orderBy(desc(orders.createdAt));
   }
 
   async listPendingOrders() {
