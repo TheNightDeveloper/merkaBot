@@ -1,18 +1,10 @@
 import { Markup } from "telegraf";
 
-export function buildMainKeyboard(webAppUrl?: string) {
-  const keyboard = [];
-
-  if (webAppUrl) {
-    keyboard.push([Markup.button.webApp("باز کردن اپ", webAppUrl)]);
-  }
-
-  keyboard.push(
+export function buildMainKeyboard() {
+  return Markup.keyboard([
     ["خرید سرویس", "اکانت تست"],
     ["سرویس های من", "پشتیبانی"]
-  );
-
-  return Markup.keyboard(keyboard).resize();
+  ]).resize();
 }
 
 export function buildWebAppKeyboard(url: string) {

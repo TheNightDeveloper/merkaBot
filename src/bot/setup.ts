@@ -11,7 +11,7 @@ export function buildBot(bot: Telegraf<BotContext>, services: AppServices) {
   bot.start(async (ctx) => {
     const user = await services.userService.ensureUser(toTelegramProfile(ctx));
     const canUseWebApp = isHttpsWebAppUrl(services.config.webAppBaseUrl);
-    const mainKeyboard = buildMainKeyboard(canUseWebApp ? services.config.webAppBaseUrl : undefined);
+    const mainKeyboard = buildMainKeyboard();
 
     if (canUseWebApp) {
       await ctx.reply(

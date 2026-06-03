@@ -48,7 +48,7 @@ async function main() {
                 .setChatMenuButton({
                 menuButton: {
                     type: "web_app",
-                    text: "پنل MerkaBot",
+                    text: "باز کردن",
                     web_app: {
                         url: config.webAppBaseUrl
                     }

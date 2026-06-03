@@ -9,7 +9,7 @@ function buildBot(bot, services) {
     bot.start(async (ctx) => {
         const user = await services.userService.ensureUser(toTelegramProfile(ctx));
         const canUseWebApp = isHttpsWebAppUrl(services.config.webAppBaseUrl);
-        const mainKeyboard = (0, keyboards_1.buildMainKeyboard)(canUseWebApp ? services.config.webAppBaseUrl : undefined);
+        const mainKeyboard = (0, keyboards_1.buildMainKeyboard)();
         if (canUseWebApp) {
             await ctx.reply(`سلام ${user.displayName}\nبرای مدیریت سرویس‌ها، خرید و پشتیبانی وارد پنل MerkaBot شوید.`, (0, keyboards_1.buildWebAppKeyboard)(services.config.webAppBaseUrl));
             await ctx.reply("منوی قدیمی بات هم برای مواقع ضروری همچنان در دسترس است.", {
