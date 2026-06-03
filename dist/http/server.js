@@ -358,7 +358,8 @@ function sendJson(res, statusCode, payload, options) {
 async function serveStaticAsset(pathname, res) {
     const requestedPath = pathname === "/" ? "/index.html" : pathname;
     const assetPath = node_path_1.default.resolve(STATIC_ROOT, `.${requestedPath}`);
-    if (!assetPath.startsWith(STATIC_ROOT)) {
+    const relativePath = node_path_1.default.relative(STATIC_ROOT, assetPath);
+    if (relativePath.startsWith("..") || node_path_1.default.isAbsolute(relativePath)) {
         throw new HttpError(403, "دسترسی غیرمجاز.");
     }
     if (await fileExists(assetPath)) {

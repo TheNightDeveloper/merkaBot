@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 import type { AppDatabase } from "../../infra/db/client";
 import { orderColumns, planColumns, serviceColumns, userColumns } from "../../infra/db/selectors";
@@ -42,8 +42,8 @@ export class OrderService {
     const [updated] = await this.db
       .update(orders)
       .set(withoutUndefined({
-        receiptFileId: receipt.fileId ?? null,
-        receiptText: receipt.text ?? null,
+        receiptFileId: receipt.fileId,
+        receiptText: receipt.text,
         status: "under_review",
         updatedAt: now
       }))
@@ -146,7 +146,7 @@ export class OrderService {
       .from(orders)
       .innerJoin(plans, eq(orders.planCode, plans.code))
       .innerJoin(users, eq(orders.userId, users.id))
-      .where(inArray(orders.status, ["under_review", "pending_receipt"]))
+      .where(eq(orders.status, "under_review"))
       .orderBy(desc(orders.createdAt));
   }
 

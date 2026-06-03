@@ -34,8 +34,8 @@ class OrderService {
         const [updated] = await this.db
             .update(schema_1.orders)
             .set((0, sanitize_1.withoutUndefined)({
-            receiptFileId: receipt.fileId ?? null,
-            receiptText: receipt.text ?? null,
+            receiptFileId: receipt.fileId,
+            receiptText: receipt.text,
             status: "under_review",
             updatedAt: now
         }))
@@ -125,7 +125,7 @@ class OrderService {
             .from(schema_1.orders)
             .innerJoin(schema_1.plans, (0, drizzle_orm_1.eq)(schema_1.orders.planCode, schema_1.plans.code))
             .innerJoin(schema_1.users, (0, drizzle_orm_1.eq)(schema_1.orders.userId, schema_1.users.id))
-            .where((0, drizzle_orm_1.inArray)(schema_1.orders.status, ["under_review", "pending_receipt"]))
+            .where((0, drizzle_orm_1.eq)(schema_1.orders.status, "under_review"))
             .orderBy((0, drizzle_orm_1.desc)(schema_1.orders.createdAt));
     }
     async transition(orderId, status, adminNote) {

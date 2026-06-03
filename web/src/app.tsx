@@ -35,6 +35,15 @@ import { Textarea } from "./components/ui/textarea";
 
 type Phase = "booting" | "ready" | "preview" | "error";
 type AppTab = "dashboard" | "buy" | "services" | "support";
+type RouteSummary = {
+  eyebrow: string;
+  title: string;
+  description: string;
+  actionLabel: string;
+  actionIcon: typeof LayoutGrid;
+  onAction: () => void;
+  stats: Array<{ label: string; value: string }>;
+};
 
 const themeOptions: Array<{
   id: ThemePreference;
@@ -256,6 +265,67 @@ export default function App() {
   function handleThemePreferenceChange(nextPreference: ThemePreference) {
     setStoredThemePreference(nextPreference);
     setThemePreference(nextPreference);
+  }
+
+  function getRouteSummary(): RouteSummary {
+    switch (activeTab) {
+      case "buy":
+        return {
+          eyebrow: "پرداخت و سفارش",
+          title: "خرید سرویس",
+          description: "پلن را انتخاب کنید، کارت مقصد را ببینید و رسیدهای باز را از همین مسیر تکمیل کنید.",
+          actionLabel: "سفارش‌های باز",
+          actionIcon: CreditCard,
+          onAction: () => setActiveTab("dashboard"),
+          stats: [
+            { label: "پلن قابل خرید", value: formatCount(snapshot.plans.length) },
+            { label: "در انتظار رسید", value: formatCount(pendingOrders.length) },
+            { label: "کارت مقصد", value: snapshot.payment.cardTitle }
+          ]
+        };
+      case "services":
+        return {
+          eyebrow: "مدیریت دسترسی",
+          title: "سرویس‌های من",
+          description: "مصرف، انقضا، کانفیگ و تمدید سرویس‌ها در همین سطح عملیاتی قابل پیگیری است.",
+          actionLabel: "خرید سرویس",
+          actionIcon: ShoppingBag,
+          onAction: () => setActiveTab("buy"),
+          stats: [
+            { label: "فعال", value: formatCount(activeServices.length) },
+            { label: "آرشیو", value: formatCount(archivedServices.length) },
+            { label: "نزدیک‌ترین انقضا", value: activeServices[0]?.expiresAt ? formatDate(activeServices[0].expiresAt) : "ثبت نشده" }
+          ]
+        };
+      case "support":
+        return {
+          eyebrow: "گفت‌وگو و پیگیری",
+          title: "پشتیبانی",
+          description: "تیکت باز کنید، سابقه پیام‌ها را ببینید و پاسخ ادمین را بدون برگشت به چت دنبال کنید.",
+          actionLabel: "باز کردن تیکت",
+          actionIcon: Headphones,
+          onAction: () => void ensureOpenTicket(),
+          stats: [
+            { label: "تیکت باز", value: formatCount(metrics.openTickets) },
+            { label: "کل تیکت‌ها", value: formatCount(snapshot.tickets.length) },
+            { label: "آخرین پاسخ", value: snapshot.tickets[0]?.updatedAt ? formatDate(snapshot.tickets[0].updatedAt) : "ثبت نشده" }
+          ]
+        };
+      default:
+        return {
+          eyebrow: "نمای کلی",
+          title: "داشبورد",
+          description: "وضعیت سفارش‌ها، سرویس‌ها و پیام‌های پشتیبانی را در یک نمای فشرده دنبال کنید.",
+          actionLabel: "خرید سرویس",
+          actionIcon: ShoppingBag,
+          onAction: () => setActiveTab("buy"),
+          stats: [
+            { label: "سرویس فعال", value: formatCount(metrics.activeServices) },
+            { label: "سفارش باز", value: formatCount(metrics.pendingOrders) },
+            { label: "تیکت باز", value: formatCount(metrics.openTickets) }
+          ]
+        };
+    }
   }
 
   function ensureLiveMode() {
@@ -516,6 +586,8 @@ export default function App() {
     );
   }
 
+  const routeSummary = getRouteSummary();
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))]">
       <Toaster
@@ -532,34 +604,39 @@ export default function App() {
         }}
       />
 
-      <header className="mb-5 flex flex-wrap items-start gap-4">
-        <div className="min-w-[240px] flex-1 space-y-2">
-          <Badge variant={snapshot.preview ? "warning" : "info"} className="w-fit">
-            {snapshot.preview ? "حالت پیش‌نمایش" : "مینی‌اپ MerkaBot"}
-          </Badge>
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-[20px] border border-[color:var(--app-border)] bg-[color:var(--app-surface)]">
+      <header className="mb-4 rounded-[26px] border border-[color:var(--app-border)] bg-[color:var(--app-surface)] px-3 py-3 shadow-[var(--app-card-shadow)]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[18px] border border-[color:var(--app-border)] bg-[color:var(--app-surface-muted)]">
               <Bot className="h-5 w-5 text-[color:var(--app-text)]" />
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-[color:var(--app-text)]">پنل سرویس‌های شما</h1>
-              <p className="text-sm text-[color:var(--app-text-muted)]">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-base font-bold leading-6 text-[color:var(--app-text)]">پنل سرویس‌های شما</h1>
+                <Badge variant={snapshot.preview ? "warning" : "info"} className="px-2.5 py-0.5 text-[11px]">
+                  {snapshot.preview ? "پیش‌نمایش" : "مینی‌اپ"}
+                </Badge>
+              </div>
+              <p className="mt-1 truncate text-xs text-[color:var(--app-text-muted)]">
                 {snapshot.user.displayName}
-                {snapshot.preview ? " • فقط نمایش رابط" : " • ورود امن از داخل تلگرام"}
+                {snapshot.preview ? " • فقط نمایش رابط" : " • ورود امن از تلگرام"}
               </p>
             </div>
           </div>
+          <div className="flex items-center justify-between gap-2 sm:justify-end">
+            <ThemeSwitcher preference={themePreference} onChange={handleThemePreferenceChange} />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => void refreshSnapshot()}
+              disabled={refreshing}
+              aria-label="به‌روزرسانی"
+              className="h-9 w-9 rounded-[14px]"
+            >
+              <RefreshCw className={refreshing ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+            </Button>
+          </div>
         </div>
-        <ThemeSwitcher preference={themePreference} onChange={handleThemePreferenceChange} />
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => void refreshSnapshot()}
-          disabled={refreshing}
-          aria-label="به‌روزرسانی"
-        >
-          <RefreshCw className={refreshing ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-        </Button>
       </header>
 
       {snapshot.preview ? (
@@ -576,43 +653,7 @@ export default function App() {
         </Card>
       ) : null}
 
-      <section className="mb-5 grid gap-3 sm:grid-cols-3">
-        <MetricCard label="سرویس فعال" value={formatCount(metrics.activeServices)} hint="وضعیت همگام‌شده" />
-        <MetricCard label="سفارش در انتظار" value={formatCount(metrics.pendingOrders)} hint="رسید یا بررسی" />
-        <MetricCard label="تیکت باز" value={formatCount(metrics.openTickets)} hint="پاسخ در همان پنل" />
-      </section>
-
-      <section className="mb-5">
-        <Card className="overflow-hidden">
-          <CardContent className="grid gap-5 px-5 py-5 sm:grid-cols-[1.4fr_1fr]">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--app-text-muted)]">Operational Surface</p>
-                <h2 className="text-2xl font-bold leading-tight text-[color:var(--app-text)]">
-                  خرید، تمدید و پشتیبانی را بدون خروج از تلگرام مدیریت کنید.
-                </h2>
-                <p className="text-sm leading-7 text-[color:var(--app-text-muted)]">
-                  تمام flowهای کاربر در یک UI فشرده و یکپارچه جمع شده‌اند. بات فقط برای ورود، اعلان و مدیریت ادمین باقی مانده است.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <Button onClick={() => setActiveTab("buy")}>
-                  خرید سرویس
-                  <ArrowUpLeft className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" onClick={() => void ensureOpenTicket()}>
-                  پشتیبانی
-                </Button>
-              </div>
-            </div>
-            <div className="grid gap-3 rounded-[28px] border border-[color:var(--app-border)] bg-[color:var(--app-surface-muted)] p-4">
-              <MiniStat label="اولین اکانت تست" value={snapshot.user.trialUsed ? "مصرف شده" : "آماده"} />
-              <MiniStat label="آخرین همگام‌سازی" value={snapshot.services[0]?.lastSyncAt ? formatDate(snapshot.services[0].lastSyncAt) : "هنوز ثبت نشده"} />
-              <MiniStat label="کارت مقصد" value={snapshot.payment.cardTitle} />
-            </div>
-          </CardContent>
-        </Card>
-      </section>
+      <RouteSummaryPanel summary={routeSummary} />
 
       <section className="mb-5 flex-1">
         {activeTab === "dashboard" ? (
@@ -1140,12 +1181,15 @@ function LoadingShell() {
         </div>
         <Skeleton className="h-10 w-10 rounded-2xl" />
       </div>
-      <div className="mb-5 grid gap-3 sm:grid-cols-3">
-        <Skeleton className="h-24 rounded-[28px]" />
-        <Skeleton className="h-24 rounded-[28px]" />
-        <Skeleton className="h-24 rounded-[28px]" />
+      <div className="mb-4 rounded-[24px] border border-[color:var(--app-border)] bg-[color:var(--app-surface)] px-4 py-4">
+        <Skeleton className="h-5 w-28" />
+        <Skeleton className="mt-3 h-7 w-72 max-w-full" />
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <Skeleton className="h-14 rounded-[18px]" />
+          <Skeleton className="h-14 rounded-[18px]" />
+          <Skeleton className="h-14 rounded-[18px]" />
+        </div>
       </div>
-      <Skeleton className="mb-5 h-56 rounded-[30px]" />
       <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
         <Skeleton className="h-[420px] rounded-[30px]" />
         <Skeleton className="h-[420px] rounded-[30px]" />
@@ -1163,9 +1207,9 @@ function ThemeSwitcher({
 }) {
   return (
     <div
-      className="inline-flex shrink-0 items-center rounded-[20px] border border-[color:var(--app-border)] bg-[color:var(--app-surface)] p-1 shadow-[var(--app-card-shadow)]"
+      className="inline-flex min-w-0 shrink-0 items-center rounded-[16px] border border-[color:var(--app-border)] bg-[color:var(--app-surface-muted)] p-0.5"
       role="group"
-      aria-label="theme switcher"
+      aria-label="تغییر تم"
     >
       {themeOptions.map((option) => {
         const Icon = option.icon;
@@ -1177,15 +1221,16 @@ function ThemeSwitcher({
             type="button"
             onClick={() => onChange(option.id)}
             className={[
-              "inline-flex items-center gap-2 rounded-[16px] px-3 py-2 text-xs font-semibold transition",
+              "inline-flex h-8 min-w-8 items-center justify-center gap-1.5 rounded-[13px] px-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-link)] sm:px-2.5",
               active
-                ? "bg-[color:var(--app-surface-muted)] text-[color:var(--app-text)]"
-                : "text-[color:var(--app-text-muted)] hover:text-[color:var(--app-text)]"
+                ? "bg-[color:var(--app-surface)] text-[color:var(--app-text)] shadow-sm"
+                : "text-[color:var(--app-text-muted)] hover:bg-[color:var(--app-surface)] hover:text-[color:var(--app-text)]"
             ].join(" ")}
             aria-pressed={active}
+            aria-label={`تم ${option.label}`}
           >
-            <Icon className="h-3.5 w-3.5" />
-            <span>{option.label}</span>
+            <Icon className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden sm:inline">{option.label}</span>
           </button>
         );
       })}
@@ -1193,26 +1238,33 @@ function ThemeSwitcher({
   );
 }
 
-function MetricCard({ label, value, hint }: { label: string; value: string; hint: string }) {
-  return (
-    <Card>
-      <CardContent className="flex items-end justify-between gap-4 py-5">
-        <div>
-          <p className="text-sm font-medium text-[color:var(--app-text-muted)]">{label}</p>
-          <p className="mt-3 text-3xl font-bold text-[color:var(--app-text)]">{value}</p>
-        </div>
-        <p className="text-xs text-[color:var(--app-text-muted)]">{hint}</p>
-      </CardContent>
-    </Card>
-  );
-}
+function RouteSummaryPanel({ summary }: { summary: RouteSummary }) {
+  const ActionIcon = summary.actionIcon;
 
-function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[22px] border border-[color:var(--app-border)] bg-[color:var(--app-surface)] px-4 py-3">
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--app-text-muted)]">{label}</p>
-      <p className="mt-2 text-sm font-semibold text-[color:var(--app-text)]">{value}</p>
-    </div>
+    <section className="mb-4 rounded-[24px] border border-[color:var(--app-border)] bg-[color:var(--app-surface)] px-4 py-4 shadow-[var(--app-card-shadow)]">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--app-text-muted)]">{summary.eyebrow}</p>
+          <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1">
+            <h2 className="text-lg font-bold leading-tight text-[color:var(--app-text)]">{summary.title}</h2>
+            <p className="max-w-xl text-sm leading-6 text-[color:var(--app-text-muted)]">{summary.description}</p>
+          </div>
+        </div>
+        <Button onClick={summary.onAction} className="shrink-0">
+          <ActionIcon className="h-4 w-4" />
+          {summary.actionLabel}
+        </Button>
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        {summary.stats.map((item) => (
+          <div key={item.label} className="rounded-[18px] border border-[color:var(--app-border)] bg-[color:var(--app-surface-muted)] px-3 py-2">
+            <p className="text-[11px] font-semibold text-[color:var(--app-text-muted)]">{item.label}</p>
+            <p className="mt-1 truncate text-sm font-semibold text-[color:var(--app-text)]">{item.value}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

@@ -11,6 +11,7 @@ export function buildBot(bot: Telegraf<BotContext>, services: AppServices) {
   bot.start(async (ctx) => {
     const user = await services.userService.ensureUser(toTelegramProfile(ctx));
     const canUseWebApp = isHttpsWebAppUrl(services.config.webAppBaseUrl);
+    const mainKeyboard = buildMainKeyboard(canUseWebApp ? services.config.webAppBaseUrl : undefined);
 
     if (canUseWebApp) {
       await ctx.reply(
@@ -18,7 +19,7 @@ export function buildBot(bot: Telegraf<BotContext>, services: AppServices) {
         buildWebAppKeyboard(services.config.webAppBaseUrl)
       );
       await ctx.reply("منوی قدیمی بات هم برای مواقع ضروری همچنان در دسترس است.", {
-        reply_markup: buildMainKeyboard().reply_markup
+        reply_markup: mainKeyboard.reply_markup
       });
       return;
     }
@@ -30,7 +31,7 @@ export function buildBot(bot: Telegraf<BotContext>, services: AppServices) {
         `برای تست لوکال، این آدرس را در مرورگر سیستم باز کنید: ${services.config.webAppBaseUrl}`
       ].join("\n"),
       {
-        reply_markup: buildMainKeyboard().reply_markup
+        reply_markup: mainKeyboard.reply_markup
       }
     );
   });

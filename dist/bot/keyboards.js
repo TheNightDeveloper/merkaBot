@@ -8,11 +8,13 @@ exports.buildAdminOrderKeyboard = buildAdminOrderKeyboard;
 exports.buildAdminTicketKeyboard = buildAdminTicketKeyboard;
 exports.buildAdminMenuKeyboard = buildAdminMenuKeyboard;
 const telegraf_1 = require("telegraf");
-function buildMainKeyboard() {
-    return telegraf_1.Markup.keyboard([
-        ["خرید سرویس", "اکانت تست"],
-        ["سرویس های من", "پشتیبانی"]
-    ]).resize();
+function buildMainKeyboard(webAppUrl) {
+    const keyboard = [];
+    if (webAppUrl) {
+        keyboard.push([telegraf_1.Markup.button.webApp("باز کردن اپ", webAppUrl)]);
+    }
+    keyboard.push(["خرید سرویس", "اکانت تست"], ["سرویس های من", "پشتیبانی"]);
+    return telegraf_1.Markup.keyboard(keyboard).resize();
 }
 function buildWebAppKeyboard(url) {
     return telegraf_1.Markup.inlineKeyboard([

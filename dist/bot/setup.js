@@ -9,10 +9,11 @@ function buildBot(bot, services) {
     bot.start(async (ctx) => {
         const user = await services.userService.ensureUser(toTelegramProfile(ctx));
         const canUseWebApp = isHttpsWebAppUrl(services.config.webAppBaseUrl);
+        const mainKeyboard = (0, keyboards_1.buildMainKeyboard)(canUseWebApp ? services.config.webAppBaseUrl : undefined);
         if (canUseWebApp) {
             await ctx.reply(`سلام ${user.displayName}\nبرای مدیریت سرویس‌ها، خرید و پشتیبانی وارد پنل MerkaBot شوید.`, (0, keyboards_1.buildWebAppKeyboard)(services.config.webAppBaseUrl));
             await ctx.reply("منوی قدیمی بات هم برای مواقع ضروری همچنان در دسترس است.", {
-                reply_markup: (0, keyboards_1.buildMainKeyboard)().reply_markup
+                reply_markup: mainKeyboard.reply_markup
             });
             return;
         }
@@ -21,7 +22,7 @@ function buildBot(bot, services) {
             "mini app در تلگرام فقط با آدرس HTTPS باز می‌شود.",
             `برای تست لوکال، این آدرس را در مرورگر سیستم باز کنید: ${services.config.webAppBaseUrl}`
         ].join("\n"), {
-            reply_markup: (0, keyboards_1.buildMainKeyboard)().reply_markup
+            reply_markup: mainKeyboard.reply_markup
         });
     });
     bot.command("cancel", async (ctx) => {
