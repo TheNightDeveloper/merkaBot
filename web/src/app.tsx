@@ -256,15 +256,15 @@ export default function App() {
   }
 
   async function resolveSnapshot(): Promise<AppSnapshot> {
+    if (telegram?.initData) {
+      const auth = await api.authTelegram(telegram.initData);
+      return loadSnapshot(auth.user, false);
+    }
+
     try {
       const currentUser = await api.getMe();
       return loadSnapshot(currentUser.user, false);
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401 && telegram?.initData) {
-        const auth = await api.authTelegram(telegram.initData);
-        return loadSnapshot(auth.user, false);
-      }
-
       if (!telegram || (error instanceof ApiError && error.status === 401)) {
         return createPreviewSnapshot({ admin: initialDeepLink.mode === "admin" });
       }

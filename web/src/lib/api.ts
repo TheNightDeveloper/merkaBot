@@ -12,7 +12,8 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
-    credentials: "same-origin"
+    credentials: "same-origin",
+    cache: "no-store"
   });
   const contentType = response.headers.get("content-type") ?? "";
   const payload = contentType.includes("application/json")

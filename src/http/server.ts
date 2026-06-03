@@ -912,6 +912,7 @@ function sendJson(
 ) {
   res.statusCode = statusCode;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
 
   if (options?.cookies?.length) {
     res.setHeader("Set-Cookie", options.cookies);
