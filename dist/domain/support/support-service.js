@@ -102,6 +102,16 @@ class SupportService {
         return updated;
     }
     async listOpenTickets() {
+        return this.listAdminTickets("all", 0);
+    }
+    async listAdminTickets(scope, adminUserId) {
+        const filters = [(0, drizzle_orm_1.eq)(schema_1.tickets.status, "open")];
+        if (scope === "unclaimed") {
+            filters.push((0, drizzle_orm_1.isNull)(schema_1.tickets.assignedAdminUserId));
+        }
+        else if (scope === "mine") {
+            filters.push((0, drizzle_orm_1.eq)(schema_1.tickets.assignedAdminUserId, adminUserId));
+        }
         return this.db
             .select({
             ticket: selectors_1.ticketColumns,
@@ -109,8 +119,16 @@ class SupportService {
         })
             .from(schema_1.tickets)
             .innerJoin(schema_1.users, (0, drizzle_orm_1.eq)(schema_1.tickets.userId, schema_1.users.id))
-            .where((0, drizzle_orm_1.eq)(schema_1.tickets.status, "open"))
+            .where((0, drizzle_orm_1.and)(...filters))
             .orderBy((0, drizzle_orm_1.desc)(schema_1.tickets.updatedAt));
+    }
+    async countAdminQueues(adminUserId) {
+        const all = await this.listAdminTickets("all", adminUserId);
+        return {
+            total: all.length,
+            mine: all.filter((item) => item.ticket.assignedAdminUserId === adminUserId).length,
+            unclaimed: all.filter((item) => item.ticket.assignedAdminUserId === null).length
+        };
     }
     async getTicketWithUser(ticketId) {
         return this.db
@@ -123,6 +141,57 @@ class SupportService {
             .where((0, drizzle_orm_1.eq)(schema_1.tickets.id, ticketId))
             .limit(1)
             .then((rows) => rows[0] ?? null);
+    }
+    async getAdminTicket(ticketId) {
+        const bundle = await this.getTicketWithUser(ticketId);
+        if (!bundle) {
+            return null;
+        }
+        const messages = await this.db
+            .select(selectors_1.ticketMessageColumns)
+            .from(schema_1.ticketMessages)
+            .where((0, drizzle_orm_1.eq)(schema_1.ticketMessages.ticketId, bundle.ticket.id))
+            .orderBy(schema_1.ticketMessages.createdAt);
+        return {
+            ...bundle,
+            messages
+        };
+    }
+    async claimAdminTicket(ticketId, adminUserId) {
+        const now = new Date();
+        const [updated] = await this.db
+            .update(schema_1.tickets)
+            .set((0, sanitize_1.withoutUndefined)({
+            assignedAdminUserId: adminUserId,
+            claimedAt: now,
+            updatedAt: now
+        }))
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.tickets.id, ticketId), (0, drizzle_orm_1.eq)(schema_1.tickets.status, "open"), (0, drizzle_orm_1.isNull)(schema_1.tickets.assignedAdminUserId)))
+            .returning();
+        await this.persist();
+        return updated ?? null;
+    }
+    async releaseAdminTicket(ticketId, adminUserId) {
+        const now = new Date();
+        const [updated] = await this.db
+            .update(schema_1.tickets)
+            .set((0, sanitize_1.withoutUndefined)({
+            assignedAdminUserId: null,
+            claimedAt: null,
+            updatedAt: now
+        }))
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.tickets.id, ticketId), (0, drizzle_orm_1.eq)(schema_1.tickets.assignedAdminUserId, adminUserId)))
+            .returning();
+        await this.persist();
+        return updated ?? null;
+    }
+    async isTicketAssignedToAdmin(ticketId, adminUserId) {
+        const rows = await this.db
+            .select({ id: schema_1.tickets.id })
+            .from(schema_1.tickets)
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.tickets.id, ticketId), (0, drizzle_orm_1.eq)(schema_1.tickets.assignedAdminUserId, adminUserId)))
+            .limit(1);
+        return rows.length > 0;
     }
     async listTicketsForUser(userId) {
         return this.db

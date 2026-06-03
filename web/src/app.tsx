@@ -2,19 +2,25 @@ import { startTransition, useEffect, useMemo, useState } from "react";
 import {
   ArrowUpLeft,
   Bot,
+  CheckCircle,
   Copy,
   CreditCard,
   Headphones,
   LayoutGrid,
   LoaderCircle,
+  MessageSquare,
   Monitor,
   MoonStar,
   RefreshCw,
+  RotateCcw,
+  ShieldCheck,
   ShoppingBag,
   Sparkles,
   SunMedium,
   UploadCloud,
-  Wifi
+  UserCheck,
+  Wifi,
+  XCircle
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 
@@ -23,7 +29,7 @@ import { formatBytes, formatCount, formatDate, formatRelativeDays } from "./lib/
 import { createPreviewSnapshot } from "./lib/mock-data";
 import { applyResolvedTheme, getStoredThemePreference, resolveEffectiveTheme, setStoredThemePreference, type ResolvedTheme, type ThemePreference } from "./lib/theme";
 import { getTelegramThemeSource, getTelegramWebApp } from "./lib/telegram";
-import type { AppSnapshot, OrderDto, PlanDto, ServiceDto, TicketDto, UserDto } from "./lib/types";
+import type { AdminOrderDto, AdminQueueSummaryDto, AdminScope, AdminTicketDto, AppSnapshot, OrderDto, PlanDto, ServiceDto, TicketDto, UserDto } from "./lib/types";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
@@ -34,7 +40,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Textarea } from "./components/ui/textarea";
 
 type Phase = "booting" | "ready" | "preview" | "error";
+type AppMode = "user" | "admin";
 type AppTab = "dashboard" | "buy" | "services" | "support";
+type AdminTab = "orders" | "tickets";
 type RouteSummary = {
   eyebrow: string;
   title: string;
@@ -43,6 +51,12 @@ type RouteSummary = {
   actionIcon: typeof LayoutGrid;
   onAction: () => void;
   stats: Array<{ label: string; value: string }>;
+};
+
+type AdminDeepLink = {
+  mode: AppMode;
+  tab: AdminTab;
+  id: number | null;
 };
 
 const themeOptions: Array<{
@@ -68,21 +82,34 @@ const navItems: Array<{
 
 export default function App() {
   const telegram = useMemo(() => getTelegramWebApp(), []);
+  const initialDeepLink = useMemo(() => readAdminDeepLink(), []);
   const [phase, setPhase] = useState<Phase>("booting");
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [appMode, setAppMode] = useState<AppMode>("user");
   const [activeTab, setActiveTab] = useState<AppTab>("dashboard");
+  const [adminTab, setAdminTab] = useState<AdminTab>("orders");
+  const [adminScope, setAdminScope] = useState<AdminScope>("unclaimed");
+  const [adminSummary, setAdminSummary] = useState<AdminQueueSummaryDto | null>(null);
+  const [adminOrders, setAdminOrders] = useState<AdminOrderDto[]>([]);
+  const [adminTickets, setAdminTickets] = useState<AdminTicketDto[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
   const [selectedOrder, setSelectedOrder] = useState<OrderDto | null>(null);
   const [selectedService, setSelectedService] = useState<ServiceDto | null>(null);
   const [selectedTicket, setSelectedTicket] = useState<TicketDto | null>(null);
+  const [selectedAdminOrder, setSelectedAdminOrder] = useState<AdminOrderDto | null>(null);
+  const [selectedAdminTicket, setSelectedAdminTicket] = useState<AdminTicketDto | null>(null);
   const [detailLoading, setDetailLoading] = useState<"order" | "service" | "ticket" | null>(null);
+  const [adminDetailLoading, setAdminDetailLoading] = useState<"order" | "ticket" | null>(null);
 
   const [receiptText, setReceiptText] = useState("");
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [ticketDraft, setTicketDraft] = useState("");
+  const [adminNoteDraft, setAdminNoteDraft] = useState("");
+  const [adminReplyDraft, setAdminReplyDraft] = useState("");
+  const [adminDeepLinkHandled, setAdminDeepLinkHandled] = useState(false);
   const [themePreference, setThemePreference] = useState<ThemePreference>(() => getStoredThemePreference());
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => {
     if (typeof window === "undefined") {
@@ -149,6 +176,38 @@ export default function App() {
     setReceiptFile(null);
   }, [selectedOrder?.id]);
 
+  useEffect(() => {
+    if (!snapshot || adminDeepLinkHandled || initialDeepLink.mode !== "admin") {
+      return;
+    }
+
+    setAdminDeepLinkHandled(true);
+
+    if (!snapshot.user.isAdmin) {
+      toast.error("دسترسی مدیریت برای این کاربر فعال نیست.");
+      return;
+    }
+
+    setAppMode("admin");
+    setAdminTab(initialDeepLink.tab);
+
+    if (initialDeepLink.id !== null) {
+      if (initialDeepLink.tab === "orders") {
+        void openAdminOrder(initialDeepLink.id);
+      } else {
+        void openAdminTicket(initialDeepLink.id);
+      }
+    }
+  }, [adminDeepLinkHandled, initialDeepLink, snapshot]);
+
+  useEffect(() => {
+    if (!snapshot?.user.isAdmin || appMode !== "admin") {
+      return;
+    }
+
+    void refreshAdminData({ silent: true });
+  }, [adminScope, adminTab, appMode, snapshot?.user.isAdmin]);
+
   const metrics = useMemo(() => {
     if (!snapshot) {
       return null;
@@ -207,7 +266,7 @@ export default function App() {
       }
 
       if (!telegram || (error instanceof ApiError && error.status === 401)) {
-        return createPreviewSnapshot();
+        return createPreviewSnapshot({ admin: initialDeepLink.mode === "admin" });
       }
 
       throw error;
@@ -216,7 +275,7 @@ export default function App() {
 
   async function loadSnapshot(user: UserDto, preview: boolean): Promise<AppSnapshot> {
     if (preview) {
-      return createPreviewSnapshot();
+      return createPreviewSnapshot({ admin: initialDeepLink.mode === "admin" });
     }
 
     const [plansPayload, servicesPayload, ordersPayload, ticketsPayload] = await Promise.all([
@@ -240,7 +299,7 @@ export default function App() {
   async function refreshSnapshot(options?: { silent?: boolean }) {
     if (phase === "preview") {
       startTransition(() => {
-        setSnapshot(createPreviewSnapshot());
+        setSnapshot(createPreviewSnapshot({ admin: initialDeepLink.mode === "admin" }));
       });
       return;
     }
@@ -262,12 +321,178 @@ export default function App() {
     }
   }
 
+  async function refreshAdminData(options?: { silent?: boolean }) {
+    if (!snapshot?.user.isAdmin) {
+      return;
+    }
+
+    if (!options?.silent) {
+      setRefreshing(true);
+    }
+
+    try {
+      if (phase === "preview") {
+        const previewAdmin = createPreviewAdminData(snapshot);
+        setAdminSummary(previewAdmin.summary);
+        setAdminOrders(filterAdminItems(previewAdmin.orders, adminScope, snapshot.user.id));
+        setAdminTickets(filterAdminItems(previewAdmin.tickets, adminScope, snapshot.user.id));
+        return;
+      }
+
+      const [summaryPayload, ordersPayload, ticketsPayload] = await Promise.all([
+        api.admin.getSummary(),
+        api.admin.getOrders(adminScope),
+        api.admin.getTickets(adminScope)
+      ]);
+
+      setAdminSummary(summaryPayload.summary);
+      setAdminOrders(ordersPayload.orders);
+      setAdminTickets(ticketsPayload.tickets);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      if (!options?.silent) {
+        setRefreshing(false);
+      }
+    }
+  }
+
+  async function openAdminOrder(orderId: number) {
+    const previewOrder = adminOrders.find((order) => order.id === orderId)
+      ?? createPreviewAdminData(snapshot).orders.find((order) => order.id === orderId)
+      ?? null;
+
+    if (phase === "preview") {
+      setSelectedAdminOrder(previewOrder);
+      return;
+    }
+
+    setAdminDetailLoading("order");
+
+    try {
+      const response = await api.admin.getOrder(orderId);
+      setSelectedAdminOrder(response.order);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setAdminDetailLoading(null);
+    }
+  }
+
+  async function openAdminTicket(ticketId: number) {
+    const previewTicket = adminTickets.find((ticket) => ticket.id === ticketId)
+      ?? createPreviewAdminData(snapshot).tickets.find((ticket) => ticket.id === ticketId)
+      ?? null;
+
+    if (phase === "preview") {
+      setSelectedAdminTicket(previewTicket);
+      return;
+    }
+
+    setAdminDetailLoading("ticket");
+
+    try {
+      const response = await api.admin.getTicket(ticketId);
+      setSelectedAdminTicket(response.ticket);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setAdminDetailLoading(null);
+    }
+  }
+
+  async function mutateAdminOrder(orderId: number, action: "claim" | "release" | "approve" | "reject" | "clarify") {
+    if (!snapshot?.user.isAdmin) {
+      return;
+    }
+
+    if (["reject", "clarify"].includes(action) && !adminNoteDraft.trim()) {
+      toast.info("یادداشت ادمین را وارد کنید.");
+      return;
+    }
+
+    setBusyKey(`admin:order:${action}:${orderId}`);
+
+    try {
+      if (phase === "preview") {
+        const nextOrder = applyPreviewOrderMutation(selectedAdminOrder, snapshot.user, action, adminNoteDraft.trim());
+        setSelectedAdminOrder(nextOrder);
+        setAdminOrders((current) => current.map((order) => order.id === orderId ? nextOrder : order));
+      } else {
+        const response = action === "claim"
+          ? await api.admin.claimOrder(orderId)
+          : action === "release"
+            ? await api.admin.releaseOrder(orderId)
+            : action === "approve"
+              ? await api.admin.approveOrder(orderId)
+              : action === "reject"
+                ? await api.admin.rejectOrder(orderId, adminNoteDraft.trim())
+                : await api.admin.clarifyOrder(orderId, adminNoteDraft.trim());
+        setSelectedAdminOrder(response.order);
+      }
+
+      setAdminNoteDraft("");
+      toast.success("سفارش به‌روزرسانی شد.");
+      if (phase !== "preview") {
+        await refreshAdminData({ silent: true });
+      }
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function mutateAdminTicket(ticketId: number, action: "claim" | "release" | "reply" | "close") {
+    if (!snapshot?.user.isAdmin) {
+      return;
+    }
+
+    if (action === "reply" && !adminReplyDraft.trim()) {
+      toast.info("متن پاسخ را وارد کنید.");
+      return;
+    }
+
+    setBusyKey(`admin:ticket:${action}:${ticketId}`);
+
+    try {
+      if (phase === "preview") {
+        const nextTicket = applyPreviewTicketMutation(selectedAdminTicket, snapshot.user, action, adminReplyDraft.trim());
+        setSelectedAdminTicket(nextTicket);
+        setAdminTickets((current) => current.map((ticket) => ticket.id === ticketId ? nextTicket : ticket));
+      } else {
+        const response = action === "claim"
+          ? await api.admin.claimTicket(ticketId)
+          : action === "release"
+            ? await api.admin.releaseTicket(ticketId)
+            : action === "reply"
+              ? await api.admin.replyTicket(ticketId, adminReplyDraft.trim())
+              : await api.admin.closeTicket(ticketId);
+        setSelectedAdminTicket(response.ticket);
+      }
+
+      setAdminReplyDraft("");
+      toast.success("تیکت به‌روزرسانی شد.");
+      if (phase !== "preview") {
+        await refreshAdminData({ silent: true });
+      }
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
   function handleThemePreferenceChange(nextPreference: ThemePreference) {
     setStoredThemePreference(nextPreference);
     setThemePreference(nextPreference);
   }
 
   function getRouteSummary(): RouteSummary {
+    if (!snapshot || !metrics) {
+      throw new Error("Snapshot is not ready.");
+    }
+
     switch (activeTab) {
       case "buy":
         return {
@@ -574,7 +799,7 @@ export default function App() {
           <CardContent className="flex flex-wrap gap-3">
             <Button onClick={() => void bootstrap()}>تلاش مجدد</Button>
             <Button variant="outline" onClick={() => {
-              const preview = createPreviewSnapshot();
+              const preview = createPreviewSnapshot({ admin: initialDeepLink.mode === "admin" });
               setSnapshot(preview);
               setPhase("preview");
             }}>
@@ -624,11 +849,14 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center justify-between gap-2 sm:justify-end">
+            {snapshot.user.isAdmin ? (
+              <ModeSwitcher mode={appMode} onChange={setAppMode} />
+            ) : null}
             <ThemeSwitcher preference={themePreference} onChange={handleThemePreferenceChange} />
             <Button
               variant="outline"
               size="icon"
-              onClick={() => void refreshSnapshot()}
+              onClick={() => appMode === "admin" ? void refreshAdminData() : void refreshSnapshot()}
               disabled={refreshing}
               aria-label="به‌روزرسانی"
               className="h-9 w-9 rounded-[14px]"
@@ -653,9 +881,26 @@ export default function App() {
         </Card>
       ) : null}
 
-      <RouteSummaryPanel summary={routeSummary} />
+      {appMode === "admin" && snapshot.user.isAdmin ? (
+        <AdminWorkspace
+          summary={adminSummary}
+          orders={adminOrders}
+          tickets={adminTickets}
+          activeTab={adminTab}
+          scope={adminScope}
+          currentAdminUserId={snapshot.user.id}
+          refreshing={refreshing}
+          onTabChange={setAdminTab}
+          onScopeChange={setAdminScope}
+          onRefresh={() => void refreshAdminData()}
+          onOpenOrder={(orderId) => void openAdminOrder(orderId)}
+          onOpenTicket={(ticketId) => void openAdminTicket(ticketId)}
+        />
+      ) : (
+        <>
+          <RouteSummaryPanel summary={routeSummary} />
 
-      <section className="mb-5 flex-1">
+          <section className="mb-5 flex-1">
         {activeTab === "dashboard" ? (
           <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
             <Card>
@@ -890,9 +1135,9 @@ export default function App() {
             </Card>
           </div>
         ) : null}
-      </section>
+          </section>
 
-      <nav className="sticky bottom-4 z-30 mt-6 grid grid-cols-4 gap-2 rounded-[28px] border border-[color:var(--app-border)] bg-[color:var(--app-surface)] p-2 shadow-[var(--app-card-shadow)] backdrop-blur">
+          <nav className="sticky bottom-4 z-30 mt-6 grid grid-cols-4 gap-2 rounded-[28px] border border-[color:var(--app-border)] bg-[color:var(--app-surface)] p-2 shadow-[var(--app-card-shadow)] backdrop-blur">
         {navItems.map((item) => {
           const Icon = item.icon;
           const active = activeTab === item.id;
@@ -913,7 +1158,9 @@ export default function App() {
             </button>
           );
         })}
-      </nav>
+          </nav>
+        </>
+      )}
 
       <Dialog open={selectedOrder !== null} onOpenChange={(open) => !open && setSelectedOrder(null)}>
         <DialogContent>
@@ -1167,6 +1414,179 @@ export default function App() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={selectedAdminOrder !== null} onOpenChange={(open) => {
+        if (!open) {
+          setSelectedAdminOrder(null);
+          setAdminNoteDraft("");
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>مدیریت سفارش #{selectedAdminOrder?.id ?? "-"}</DialogTitle>
+            <DialogDescription>رسید، کاربر و تصمیم نهایی سفارش در همین پنل مدیریت می‌شود.</DialogDescription>
+          </DialogHeader>
+          <DialogBody className="app-scrollbar">
+            {adminDetailLoading === "order" && !selectedAdminOrder ? (
+              <DialogSkeleton />
+            ) : selectedAdminOrder ? (
+              <div className="space-y-5">
+                <AdminAssignmentHeader
+                  assignedAdminDisplayName={selectedAdminOrder.assignedAdminDisplayName}
+                  claimedAt={selectedAdminOrder.claimedAt}
+                  isMine={selectedAdminOrder.assignedAdminUserId === snapshot.user.id}
+                />
+                <div className="flex items-center justify-between gap-4 rounded-[24px] border border-[color:var(--app-border)] bg-[color:var(--app-surface-muted)] p-4">
+                  <div>
+                    <p className="text-sm font-semibold text-[color:var(--app-text)]">{selectedAdminOrder.user.displayName}</p>
+                    <p className="mt-2 text-sm text-[color:var(--app-text-muted)]">
+                      {selectedAdminOrder.plan.title} • {selectedAdminOrder.plan.priceLabel} • {mapOrderKind(selectedAdminOrder.kind)}
+                    </p>
+                  </div>
+                  <StatusBadge status={selectedAdminOrder.status} />
+                </div>
+                <InfoGrid
+                  items={[
+                    { label: "تلگرام", value: String(selectedAdminOrder.user.telegramId) },
+                    { label: "ساخته‌شده", value: formatDate(selectedAdminOrder.createdAt) },
+                    { label: "آخرین بروزرسانی", value: formatDate(selectedAdminOrder.updatedAt) },
+                    { label: "رسید تصویری", value: selectedAdminOrder.hasReceiptImage ? "ثبت شده" : "ندارد" }
+                  ]}
+                />
+                <Card className="border-dashed">
+                  <CardHeader>
+                    <CardTitle className="text-sm">رسید و توضیحات کاربر</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm leading-7 text-[color:var(--app-text-muted)]">{selectedAdminOrder.receiptText ?? selectedAdminOrder.preview}</p>
+                  </CardContent>
+                </Card>
+                <div className="space-y-3">
+                  <SectionLabel title="یادداشت برای کاربر" description="برای رد سفارش یا درخواست توضیح، متن پیام کاربر را وارد کنید." />
+                  <Textarea
+                    value={adminNoteDraft}
+                    onChange={(event) => setAdminNoteDraft(event.target.value)}
+                    placeholder="دلیل رد یا توضیح موردنیاز..."
+                    disabled={selectedAdminOrder.assignedAdminUserId !== snapshot.user.id}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </DialogBody>
+          <DialogFooter>
+            {selectedAdminOrder ? (
+              <>
+                {selectedAdminOrder.assignedAdminUserId === null ? (
+                  <Button onClick={() => void mutateAdminOrder(selectedAdminOrder.id, "claim")} disabled={busyKey === `admin:order:claim:${selectedAdminOrder.id}`}>
+                    {busyKey === `admin:order:claim:${selectedAdminOrder.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4" />}
+                    Claim
+                  </Button>
+                ) : selectedAdminOrder.assignedAdminUserId === snapshot.user.id ? (
+                  <>
+                    <Button variant="outline" onClick={() => void mutateAdminOrder(selectedAdminOrder.id, "release")} disabled={busyKey === `admin:order:release:${selectedAdminOrder.id}`}>
+                      <RotateCcw className="h-4 w-4" />
+                      Release
+                    </Button>
+                    <Button variant="outline" onClick={() => void mutateAdminOrder(selectedAdminOrder.id, "clarify")} disabled={!adminNoteDraft.trim() || busyKey === `admin:order:clarify:${selectedAdminOrder.id}`}>
+                      <MessageSquare className="h-4 w-4" />
+                      توضیح
+                    </Button>
+                    <Button variant="destructive" onClick={() => void mutateAdminOrder(selectedAdminOrder.id, "reject")} disabled={!adminNoteDraft.trim() || busyKey === `admin:order:reject:${selectedAdminOrder.id}`}>
+                      <XCircle className="h-4 w-4" />
+                      رد
+                    </Button>
+                    <Button onClick={() => void mutateAdminOrder(selectedAdminOrder.id, "approve")} disabled={busyKey === `admin:order:approve:${selectedAdminOrder.id}`}>
+                      {busyKey === `admin:order:approve:${selectedAdminOrder.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                      تایید
+                    </Button>
+                  </>
+                ) : null}
+              </>
+            ) : null}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={selectedAdminTicket !== null} onOpenChange={(open) => {
+        if (!open) {
+          setSelectedAdminTicket(null);
+          setAdminReplyDraft("");
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>مدیریت تیکت #{selectedAdminTicket?.id ?? "-"}</DialogTitle>
+            <DialogDescription>پاسخ ادمین و بستن تیکت فقط برای assignee فعال است.</DialogDescription>
+          </DialogHeader>
+          <DialogBody className="app-scrollbar">
+            {adminDetailLoading === "ticket" && !selectedAdminTicket ? (
+              <DialogSkeleton />
+            ) : selectedAdminTicket ? (
+              <div className="space-y-5">
+                <AdminAssignmentHeader
+                  assignedAdminDisplayName={selectedAdminTicket.assignedAdminDisplayName}
+                  claimedAt={selectedAdminTicket.claimedAt}
+                  isMine={selectedAdminTicket.assignedAdminUserId === snapshot.user.id}
+                />
+                <div className="flex items-center justify-between gap-4 rounded-[24px] border border-[color:var(--app-border)] bg-[color:var(--app-surface-muted)] p-4">
+                  <div>
+                    <p className="text-sm font-semibold text-[color:var(--app-text)]">{selectedAdminTicket.user.displayName}</p>
+                    <p className="mt-2 text-sm text-[color:var(--app-text-muted)]">آخرین بروزرسانی: {formatDate(selectedAdminTicket.updatedAt)}</p>
+                  </div>
+                  <StatusBadge status={selectedAdminTicket.status} />
+                </div>
+                <div className="space-y-3">
+                  {(selectedAdminTicket.messages ?? []).map((message) => (
+                    <div key={message.id} className={`rounded-[22px] px-4 py-3 ${message.senderRole === "user" ? "mr-8 border border-[color:var(--app-border)] bg-[color:var(--app-surface)]" : "ml-8 bg-[color:var(--app-surface-muted)]"}`}>
+                      <div className="mb-2 flex items-center gap-2">
+                        <Badge variant={message.senderRole === "admin" ? "info" : "default"}>{message.senderRole === "admin" ? "ادمین" : "کاربر"}</Badge>
+                        <span className="text-xs text-[color:var(--app-text-muted)]">{formatDate(message.createdAt)}</span>
+                      </div>
+                      <p className="text-sm leading-7 text-[color:var(--app-text)]">{message.body}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-3">
+                  <SectionLabel title="پاسخ ادمین" description="پاسخ برای کاربر ارسال می‌شود و در thread ذخیره می‌ماند." />
+                  <Textarea
+                    value={adminReplyDraft}
+                    onChange={(event) => setAdminReplyDraft(event.target.value)}
+                    placeholder="پاسخ پشتیبانی..."
+                    disabled={selectedAdminTicket.assignedAdminUserId !== snapshot.user.id || selectedAdminTicket.status !== "open"}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </DialogBody>
+          <DialogFooter>
+            {selectedAdminTicket ? (
+              <>
+                {selectedAdminTicket.assignedAdminUserId === null ? (
+                  <Button onClick={() => void mutateAdminTicket(selectedAdminTicket.id, "claim")} disabled={busyKey === `admin:ticket:claim:${selectedAdminTicket.id}`}>
+                    {busyKey === `admin:ticket:claim:${selectedAdminTicket.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4" />}
+                    Claim
+                  </Button>
+                ) : selectedAdminTicket.assignedAdminUserId === snapshot.user.id ? (
+                  <>
+                    <Button variant="outline" onClick={() => void mutateAdminTicket(selectedAdminTicket.id, "release")} disabled={busyKey === `admin:ticket:release:${selectedAdminTicket.id}`}>
+                      <RotateCcw className="h-4 w-4" />
+                      Release
+                    </Button>
+                    <Button variant="outline" onClick={() => void mutateAdminTicket(selectedAdminTicket.id, "close")} disabled={selectedAdminTicket.status !== "open" || busyKey === `admin:ticket:close:${selectedAdminTicket.id}`}>
+                      <XCircle className="h-4 w-4" />
+                      بستن
+                    </Button>
+                    <Button onClick={() => void mutateAdminTicket(selectedAdminTicket.id, "reply")} disabled={!adminReplyDraft.trim() || selectedAdminTicket.status !== "open" || busyKey === `admin:ticket:reply:${selectedAdminTicket.id}`}>
+                      {busyKey === `admin:ticket:reply:${selectedAdminTicket.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
+                      ارسال پاسخ
+                    </Button>
+                  </>
+                ) : null}
+              </>
+            ) : null}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
@@ -1234,6 +1654,275 @@ function ThemeSwitcher({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+function ModeSwitcher({
+  mode,
+  onChange
+}: {
+  mode: AppMode;
+  onChange: (mode: AppMode) => void;
+}) {
+  return (
+    <div className="inline-flex shrink-0 rounded-[16px] border border-[color:var(--app-border)] bg-[color:var(--app-surface-muted)] p-0.5">
+      {([
+        { id: "user", label: "کاربر", icon: Bot },
+        { id: "admin", label: "مدیریت", icon: ShieldCheck }
+      ] as Array<{ id: AppMode; label: string; icon: typeof Bot }>).map((item) => {
+        const Icon = item.icon;
+        const active = mode === item.id;
+
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onChange(item.id)}
+            className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-[13px] px-2.5 text-xs font-semibold transition ${
+              active
+                ? "bg-[color:var(--app-surface)] text-[color:var(--app-text)] shadow-sm"
+                : "text-[color:var(--app-text-muted)] hover:bg-[color:var(--app-surface)] hover:text-[color:var(--app-text)]"
+            }`}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{item.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function AdminWorkspace({
+  summary,
+  orders,
+  tickets,
+  activeTab,
+  scope,
+  currentAdminUserId,
+  refreshing,
+  onTabChange,
+  onScopeChange,
+  onRefresh,
+  onOpenOrder,
+  onOpenTicket
+}: {
+  summary: AdminQueueSummaryDto | null;
+  orders: AdminOrderDto[];
+  tickets: AdminTicketDto[];
+  activeTab: AdminTab;
+  scope: AdminScope;
+  currentAdminUserId: number;
+  refreshing: boolean;
+  onTabChange: (tab: AdminTab) => void;
+  onScopeChange: (scope: AdminScope) => void;
+  onRefresh: () => void;
+  onOpenOrder: (orderId: number) => void;
+  onOpenTicket: (ticketId: number) => void;
+}) {
+  const activeItems = activeTab === "orders" ? orders : tickets;
+
+  return (
+    <section className="mb-5 flex-1 space-y-4">
+      <div className="rounded-[24px] border border-[color:var(--app-border)] bg-[color:var(--app-surface)] px-4 py-4 shadow-[var(--app-card-shadow)]">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--app-text-muted)]">Admin Inbox</p>
+            <h2 className="mt-2 text-lg font-bold text-[color:var(--app-text)]">رسیدگی به درخواست‌ها</h2>
+          </div>
+          <Button variant="outline" onClick={onRefresh} disabled={refreshing}>
+            <RefreshCw className={refreshing ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+            تازه‌سازی
+          </Button>
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-4">
+          <AdminMetric label="سفارش باز" value={summary?.orders.total ?? 0} />
+          <AdminMetric label="سفارش من" value={summary?.orders.mine ?? 0} />
+          <AdminMetric label="تیکت باز" value={summary?.tickets.total ?? 0} />
+          <AdminMetric label="تیکت من" value={summary?.tickets.mine ?? 0} />
+        </div>
+      </div>
+
+      <div className="rounded-[24px] border border-[color:var(--app-border)] bg-[color:var(--app-surface)] p-3 shadow-[var(--app-card-shadow)]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="grid grid-cols-2 gap-2 rounded-[18px] bg-[color:var(--app-surface-muted)] p-1">
+            {([
+              { id: "orders", label: "سفارش‌ها", icon: CreditCard },
+              { id: "tickets", label: "تیکت‌ها", icon: MessageSquare }
+            ] as Array<{ id: AdminTab; label: string; icon: typeof CreditCard }>).map((item) => {
+              const Icon = item.icon;
+              const active = activeTab === item.id;
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onTabChange(item.id)}
+                  className={`inline-flex h-10 items-center justify-center gap-2 rounded-[14px] px-3 text-sm font-semibold transition ${
+                    active ? "bg-[color:var(--app-surface)] text-[color:var(--app-text)] shadow-sm" : "text-[color:var(--app-text-muted)]"
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="grid grid-cols-3 gap-1 rounded-[18px] bg-[color:var(--app-surface-muted)] p-1">
+            {([
+              { id: "unclaimed", label: "Unclaimed" },
+              { id: "mine", label: "Mine" },
+              { id: "all", label: "All" }
+            ] as Array<{ id: AdminScope; label: string }>).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onScopeChange(item.id)}
+                className={`h-9 rounded-[14px] px-2 text-xs font-semibold transition ${
+                  scope === item.id ? "bg-[color:var(--app-surface)] text-[color:var(--app-text)] shadow-sm" : "text-[color:var(--app-text-muted)]"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <ListArea className="mt-4">
+          {activeItems.length > 0 ? (
+            activeTab === "orders"
+              ? orders.map((order) => (
+                  <AdminOrderCard
+                    key={order.id}
+                    order={order}
+                    currentAdminUserId={currentAdminUserId}
+                    onOpen={() => onOpenOrder(order.id)}
+                  />
+                ))
+              : tickets.map((ticket) => (
+                  <AdminTicketCard
+                    key={ticket.id}
+                    ticket={ticket}
+                    currentAdminUserId={currentAdminUserId}
+                    onOpen={() => onOpenTicket(ticket.id)}
+                  />
+                ))
+          ) : (
+            <EmptyState title="موردی در این صف نیست" description="با تغییر فیلتر یا تازه‌سازی، صف‌های دیگر را بررسی کنید." />
+          )}
+        </ListArea>
+      </div>
+    </section>
+  );
+}
+
+function AdminMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[18px] border border-[color:var(--app-border)] bg-[color:var(--app-surface-muted)] px-3 py-2">
+      <p className="text-[11px] font-semibold text-[color:var(--app-text-muted)]">{label}</p>
+      <p className="mt-1 text-sm font-bold text-[color:var(--app-text)]">{formatCount(value)}</p>
+    </div>
+  );
+}
+
+function AdminOrderCard({
+  order,
+  currentAdminUserId,
+  onOpen
+}: {
+  order: AdminOrderDto;
+  currentAdminUserId: number;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex w-full items-center justify-between gap-4 rounded-[22px] border border-[color:var(--app-border)] bg-[color:var(--app-surface)] px-4 py-4 text-right transition hover:bg-[color:var(--app-surface-muted)]"
+    >
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-semibold text-[color:var(--app-text)]">سفارش #{order.id}</p>
+          <StatusBadge status={order.status} />
+          <AdminAssignmentBadge item={order} currentAdminUserId={currentAdminUserId} />
+        </div>
+        <p className="mt-2 truncate text-sm text-[color:var(--app-text-muted)]">{order.user.displayName} • {order.plan.title}</p>
+        <p className="mt-1 truncate text-xs text-[color:var(--app-text-muted)]">{order.preview}</p>
+      </div>
+      <ArrowUpLeft className="h-4 w-4 shrink-0 text-[color:var(--app-text-muted)]" />
+    </button>
+  );
+}
+
+function AdminTicketCard({
+  ticket,
+  currentAdminUserId,
+  onOpen
+}: {
+  ticket: AdminTicketDto;
+  currentAdminUserId: number;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex w-full items-center justify-between gap-4 rounded-[22px] border border-[color:var(--app-border)] bg-[color:var(--app-surface)] px-4 py-4 text-right transition hover:bg-[color:var(--app-surface-muted)]"
+    >
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-semibold text-[color:var(--app-text)]">تیکت #{ticket.id}</p>
+          <StatusBadge status={ticket.status} />
+          <AdminAssignmentBadge item={ticket} currentAdminUserId={currentAdminUserId} />
+        </div>
+        <p className="mt-2 truncate text-sm text-[color:var(--app-text-muted)]">{ticket.user.displayName} • {formatDate(ticket.updatedAt)}</p>
+        <p className="mt-1 truncate text-xs text-[color:var(--app-text-muted)]">{ticket.preview}</p>
+      </div>
+      <ArrowUpLeft className="h-4 w-4 shrink-0 text-[color:var(--app-text-muted)]" />
+    </button>
+  );
+}
+
+function AdminAssignmentBadge({
+  item,
+  currentAdminUserId
+}: {
+  item: { assignedAdminUserId: number | null; assignedAdminDisplayName: string | null };
+  currentAdminUserId: number;
+}) {
+  if (item.assignedAdminUserId === null) {
+    return <Badge variant="warning">Unclaimed</Badge>;
+  }
+
+  if (item.assignedAdminUserId === currentAdminUserId) {
+    return <Badge variant="success">Mine</Badge>;
+  }
+
+  return <Badge variant="info">{item.assignedAdminDisplayName ?? "Assigned"}</Badge>;
+}
+
+function AdminAssignmentHeader({
+  assignedAdminDisplayName,
+  claimedAt,
+  isMine
+}: {
+  assignedAdminDisplayName: string | null;
+  claimedAt: string | null;
+  isMine: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-[22px] border border-[color:var(--app-border)] bg-[color:var(--app-surface-muted)] px-4 py-3">
+      <div>
+        <p className="text-sm font-semibold text-[color:var(--app-text)]">
+          {assignedAdminDisplayName ? `Assignee: ${assignedAdminDisplayName}` : "هنوز claim نشده"}
+        </p>
+        <p className="mt-1 text-xs text-[color:var(--app-text-muted)]">{claimedAt ? formatDate(claimedAt) : "برای شروع رسیدگی claim کنید."}</p>
+      </div>
+      <Badge variant={isMine ? "success" : assignedAdminDisplayName ? "info" : "warning"}>
+        {isMine ? "Mine" : assignedAdminDisplayName ? "Assigned" : "Unclaimed"}
+      </Badge>
     </div>
   );
 }
@@ -1473,6 +2162,203 @@ function mapOrderKind(kind: OrderDto["kind"]) {
     default:
       return kind;
   }
+}
+
+function readAdminDeepLink(): AdminDeepLink {
+  if (typeof window === "undefined") {
+    return { mode: "user", tab: "orders", id: null };
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const mode = params.get("mode") === "admin" ? "admin" : "user";
+  const tab = params.get("tab") === "tickets" ? "tickets" : "orders";
+  const idValue = Number(params.get("id"));
+
+  return {
+    mode,
+    tab,
+    id: Number.isFinite(idValue) && idValue > 0 ? idValue : null
+  };
+}
+
+function createPreviewAdminData(snapshot: AppSnapshot | null): {
+  summary: AdminQueueSummaryDto;
+  orders: AdminOrderDto[];
+  tickets: AdminTicketDto[];
+} {
+  if (!snapshot) {
+    return {
+      summary: {
+        orders: { total: 0, mine: 0, unclaimed: 0 },
+        tickets: { total: 0, mine: 0, unclaimed: 0 }
+      },
+      orders: [],
+      tickets: []
+    };
+  }
+
+  const previewUser = {
+    id: 200,
+    telegramId: 99887766,
+    username: "customer",
+    displayName: "کاربر نمونه"
+  };
+
+  const orders: AdminOrderDto[] = snapshot.orders
+    .filter((order) => order.status === "under_review")
+    .map((order) => ({
+      ...order,
+      user: previewUser,
+      assignedAdminUserId: null,
+      assignedAdminDisplayName: null,
+      claimedAt: null,
+      preview: order.receiptText ?? (order.hasReceiptImage ? "رسید تصویری ثبت شده است." : "رسیدی ثبت نشده است.")
+    }));
+
+  const tickets: AdminTicketDto[] = snapshot.tickets
+    .filter((ticket) => ticket.status === "open")
+    .map((ticket) => {
+      const latestMessage = ticket.messages?.[ticket.messages.length - 1] ?? null;
+
+      return {
+        ...ticket,
+        user: previewUser,
+        assignedAdminUserId: null,
+        assignedAdminDisplayName: null,
+        claimedAt: null,
+        preview: latestMessage?.body ?? "پیامی ثبت نشده است."
+      };
+    });
+
+  return {
+    summary: {
+      orders: countAdminItems(orders, snapshot.user.id),
+      tickets: countAdminItems(tickets, snapshot.user.id)
+    },
+    orders,
+    tickets
+  };
+}
+
+function filterAdminItems<T extends { assignedAdminUserId: number | null }>(
+  items: T[],
+  scope: AdminScope,
+  adminUserId: number
+) {
+  if (scope === "mine") {
+    return items.filter((item) => item.assignedAdminUserId === adminUserId);
+  }
+
+  if (scope === "unclaimed") {
+    return items.filter((item) => item.assignedAdminUserId === null);
+  }
+
+  return items;
+}
+
+function countAdminItems(items: Array<{ assignedAdminUserId: number | null }>, adminUserId: number) {
+  return {
+    total: items.length,
+    mine: items.filter((item) => item.assignedAdminUserId === adminUserId).length,
+    unclaimed: items.filter((item) => item.assignedAdminUserId === null).length
+  };
+}
+
+function applyPreviewOrderMutation(
+  current: AdminOrderDto | null,
+  user: UserDto,
+  action: "claim" | "release" | "approve" | "reject" | "clarify",
+  note: string
+) {
+  if (!current) {
+    throw new Error("سفارش انتخاب نشده است.");
+  }
+
+  if (action === "claim") {
+    return {
+      ...current,
+      assignedAdminUserId: user.id,
+      assignedAdminDisplayName: user.displayName,
+      claimedAt: new Date().toISOString()
+    };
+  }
+
+  if (action === "release") {
+    return {
+      ...current,
+      assignedAdminUserId: null,
+      assignedAdminDisplayName: null,
+      claimedAt: null
+    };
+  }
+
+  if (action === "approve") {
+    return {
+      ...current,
+      status: "fulfilled" as const,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  return {
+    ...current,
+    status: action === "reject" ? "rejected" as const : "pending_receipt" as const,
+    adminNote: note,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function applyPreviewTicketMutation(
+  current: AdminTicketDto | null,
+  user: UserDto,
+  action: "claim" | "release" | "reply" | "close",
+  body: string
+) {
+  if (!current) {
+    throw new Error("تیکت انتخاب نشده است.");
+  }
+
+  if (action === "claim") {
+    return {
+      ...current,
+      assignedAdminUserId: user.id,
+      assignedAdminDisplayName: user.displayName,
+      claimedAt: new Date().toISOString()
+    };
+  }
+
+  if (action === "release") {
+    return {
+      ...current,
+      assignedAdminUserId: null,
+      assignedAdminDisplayName: null,
+      claimedAt: null
+    };
+  }
+
+  if (action === "close") {
+    return {
+      ...current,
+      status: "closed" as const,
+      closedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  const nextMessage = {
+    id: Date.now(),
+    ticketId: current.id,
+    body,
+    senderRole: "admin" as const,
+    createdAt: new Date().toISOString()
+  };
+
+  return {
+    ...current,
+    preview: body,
+    messages: [...(current.messages ?? []), nextMessage],
+    updatedAt: nextMessage.createdAt
+  };
 }
 
 function getErrorMessage(error: unknown) {

@@ -33,7 +33,10 @@ function buildServiceKeyboard(serviceId) {
         [telegraf_1.Markup.button.callback("تمدید", `svc:renew:${serviceId}`)]
     ]);
 }
-function buildAdminOrderKeyboard(orderId, telegramUserId) {
+function buildAdminOrderKeyboard(orderId, telegramUserId, webAppBaseUrl) {
+    if (canUseWebAppButton(webAppBaseUrl)) {
+        return buildAdminPanelKeyboard(webAppBaseUrl, "orders", orderId);
+    }
     return telegraf_1.Markup.inlineKeyboard([
         [
             telegraf_1.Markup.button.callback("تایید", `ord:approve:${orderId}`),
@@ -45,7 +48,10 @@ function buildAdminOrderKeyboard(orderId, telegramUserId) {
         ]
     ]);
 }
-function buildAdminTicketKeyboard(ticketId, telegramUserId) {
+function buildAdminTicketKeyboard(ticketId, telegramUserId, webAppBaseUrl) {
+    if (canUseWebAppButton(webAppBaseUrl)) {
+        return buildAdminPanelKeyboard(webAppBaseUrl, "tickets", ticketId);
+    }
     return telegraf_1.Markup.inlineKeyboard([
         [
             telegraf_1.Markup.button.callback("پاسخ", `ticket:reply:${ticketId}`),
@@ -54,11 +60,35 @@ function buildAdminTicketKeyboard(ticketId, telegramUserId) {
         [telegraf_1.Markup.button.callback("سرویس های کاربر", `adm:user:${telegramUserId}`)]
     ]);
 }
-function buildAdminMenuKeyboard() {
+function buildAdminMenuKeyboard(webAppBaseUrl) {
+    if (canUseWebAppButton(webAppBaseUrl)) {
+        return telegraf_1.Markup.inlineKeyboard([
+            [telegraf_1.Markup.button.webApp("باز کردن پنل مدیریت", buildAdminPanelUrl(webAppBaseUrl))]
+        ]);
+    }
     return telegraf_1.Markup.inlineKeyboard([
         [
             telegraf_1.Markup.button.callback("سفارش های باز", "adm:orders"),
             telegraf_1.Markup.button.callback("تیکت های باز", "adm:tickets")
         ]
     ]);
+}
+function buildAdminPanelKeyboard(webAppBaseUrl, tab, itemId) {
+    return telegraf_1.Markup.inlineKeyboard([
+        [telegraf_1.Markup.button.webApp("باز کردن در پنل مدیریت", buildAdminPanelUrl(webAppBaseUrl, tab, itemId))]
+    ]);
+}
+function buildAdminPanelUrl(webAppBaseUrl, tab, itemId) {
+    const url = new URL(webAppBaseUrl);
+    url.searchParams.set("mode", "admin");
+    if (tab) {
+        url.searchParams.set("tab", tab);
+    }
+    if (itemId !== undefined) {
+        url.searchParams.set("id", String(itemId));
+    }
+    return url.toString();
+}
+function canUseWebAppButton(webAppBaseUrl) {
+    return Boolean(webAppBaseUrl?.startsWith("https://"));
 }

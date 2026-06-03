@@ -35,10 +35,13 @@ function bootstrapDatabase(sqlite) {
       receipt_text TEXT,
       admin_note TEXT,
       target_service_id INTEGER,
+      assigned_admin_user_id INTEGER,
+      claimed_at INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id),
-      FOREIGN KEY (plan_code) REFERENCES plans(code)
+      FOREIGN KEY (plan_code) REFERENCES plans(code),
+      FOREIGN KEY (assigned_admin_user_id) REFERENCES users(id)
     );
 
     CREATE TABLE IF NOT EXISTS services (
@@ -68,10 +71,13 @@ function bootstrapDatabase(sqlite) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
       status TEXT NOT NULL,
+      assigned_admin_user_id INTEGER,
+      claimed_at INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       closed_at INTEGER,
-      FOREIGN KEY (user_id) REFERENCES users(id)
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (assigned_admin_user_id) REFERENCES users(id)
     );
 
     CREATE TABLE IF NOT EXISTS ticket_messages (
@@ -84,6 +90,10 @@ function bootstrapDatabase(sqlite) {
       FOREIGN KEY (ticket_id) REFERENCES tickets(id)
     );
   `);
+    ensureColumn(sqlite, "orders", "assigned_admin_user_id", "INTEGER");
+    ensureColumn(sqlite, "orders", "claimed_at", "INTEGER");
+    ensureColumn(sqlite, "tickets", "assigned_admin_user_id", "INTEGER");
+    ensureColumn(sqlite, "tickets", "claimed_at", "INTEGER");
     const statement = sqlite.prepare(`
     INSERT OR IGNORE INTO plans (
       code,
@@ -119,4 +129,11 @@ function bootstrapDatabase(sqlite) {
         statement.reset();
     }
     statement.free();
+}
+function ensureColumn(sqlite, tableName, columnName, columnDefinition) {
+    const rows = sqlite.exec(`PRAGMA table_info(${tableName})`);
+    const existingColumns = rows[0]?.values.map((row) => String(row[1])) ?? [];
+    if (!existingColumns.includes(columnName)) {
+        sqlite.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`);
+    }
 }

@@ -19,7 +19,7 @@ export async function notifyAdminsOfOrder(
   }
 
   const message = describeOrder(orderId, bundle.user.displayName, bundle.user.telegramId, bundle.plan.title, bundle.order.receiptText);
-  const keyboard = buildAdminOrderKeyboard(orderId, bundle.user.telegramId);
+  const keyboard = buildAdminOrderKeyboard(orderId, bundle.user.telegramId, services.config.webAppBaseUrl);
 
   let uploadedFileId = bundle.order.receiptFileId ?? undefined;
 
@@ -67,7 +67,7 @@ export async function notifyAdminsOfTicket(
   ].join("\n");
 
   for (const adminId of services.config.adminIds) {
-    await bot.telegram.sendMessage(adminId, message, buildAdminTicketKeyboard(ticketId, bundle.user.telegramId));
+    await bot.telegram.sendMessage(adminId, message, buildAdminTicketKeyboard(ticketId, bundle.user.telegramId, services.config.webAppBaseUrl));
   }
 }
 

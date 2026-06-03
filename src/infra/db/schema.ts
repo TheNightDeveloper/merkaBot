@@ -33,6 +33,8 @@ export const orders = sqliteTable("orders", {
   receiptText: text("receipt_text"),
   adminNote: text("admin_note"),
   targetServiceId: integer("target_service_id"),
+  assignedAdminUserId: integer("assigned_admin_user_id").references(() => users.id),
+  claimedAt: integer("claimed_at", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull()
 });
@@ -62,6 +64,8 @@ export const tickets = sqliteTable("tickets", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   userId: integer("user_id").notNull().references(() => users.id),
   status: text("status").$type<TicketStatus>().notNull(),
+  assignedAdminUserId: integer("assigned_admin_user_id").references(() => users.id),
+  claimedAt: integer("claimed_at", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   closedAt: integer("closed_at", { mode: "timestamp_ms" })

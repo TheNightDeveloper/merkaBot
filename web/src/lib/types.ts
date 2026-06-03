@@ -80,6 +80,42 @@ export type TicketDto = {
   messages?: TicketMessageDto[];
 };
 
+export type AdminScope = "unclaimed" | "mine" | "all";
+
+export type AdminUserSummaryDto = {
+  id: number;
+  telegramId: number;
+  username: string | null;
+  displayName: string;
+};
+
+export type AdminQueueCountsDto = {
+  total: number;
+  mine: number;
+  unclaimed: number;
+};
+
+export type AdminQueueSummaryDto = {
+  orders: AdminQueueCountsDto;
+  tickets: AdminQueueCountsDto;
+};
+
+export type AdminAssignmentDto = {
+  assignedAdminUserId: number | null;
+  assignedAdminDisplayName: string | null;
+  claimedAt: string | null;
+};
+
+export type AdminOrderDto = OrderDto & AdminAssignmentDto & {
+  user: AdminUserSummaryDto;
+  preview: string;
+};
+
+export type AdminTicketDto = TicketDto & AdminAssignmentDto & {
+  user: AdminUserSummaryDto;
+  preview: string;
+};
+
 export type AppSnapshot = {
   user: UserDto;
   payment: PaymentInfo;

@@ -31,6 +31,8 @@ exports.orderColumns = {
     receiptText: schema_1.orders.receiptText,
     adminNote: schema_1.orders.adminNote,
     targetServiceId: schema_1.orders.targetServiceId,
+    assignedAdminUserId: schema_1.orders.assignedAdminUserId,
+    claimedAt: schema_1.orders.claimedAt,
     createdAt: schema_1.orders.createdAt,
     updatedAt: schema_1.orders.updatedAt
 };
@@ -58,6 +60,8 @@ exports.ticketColumns = {
     id: schema_1.tickets.id,
     userId: schema_1.tickets.userId,
     status: schema_1.tickets.status,
+    assignedAdminUserId: schema_1.tickets.assignedAdminUserId,
+    claimedAt: schema_1.tickets.claimedAt,
     createdAt: schema_1.tickets.createdAt,
     updatedAt: schema_1.tickets.updatedAt,
     closedAt: schema_1.tickets.closedAt

@@ -93,6 +93,10 @@ async function handleApiRequest(method, context) {
         });
         return;
     }
+    if (requestUrl.pathname.startsWith("/api/admin/")) {
+        await handleAdminApiRequest(method, context);
+        return;
+    }
     if (requestUrl.pathname === "/api/plans" && method === "GET") {
         const plans = await services.planService.listPaidPlans();
         sendJson(response, 200, {
@@ -317,6 +321,326 @@ async function handleApiRequest(method, context) {
         return;
     }
     throw new HttpError(404, "مسیر درخواستی پیدا نشد.");
+}
+async function handleAdminApiRequest(method, context) {
+    const { requestUrl, response, request, services, user, bot } = context;
+    if (!user.isAdmin) {
+        throw new HttpError(403, "دسترسی ادمین ندارید.");
+    }
+    if (requestUrl.pathname === "/api/admin/summary" && method === "GET") {
+        const [orderCounts, ticketCounts] = await Promise.all([
+            services.orderService.countAdminQueues(user.id),
+            services.supportService.countAdminQueues(user.id)
+        ]);
+        sendJson(response, 200, {
+            summary: {
+                orders: orderCounts,
+                tickets: ticketCounts
+            }
+        });
+        return;
+    }
+    if (requestUrl.pathname === "/api/admin/orders" && method === "GET") {
+        const scope = readAdminScope(requestUrl);
+        const orders = await services.orderService.listAdminOrders(scope, user.id);
+        sendJson(response, 200, {
+            orders: await Promise.all(orders.map((item) => serializeAdminOrderItem(services, item)))
+        });
+        return;
+    }
+    const adminOrderMatch = requestUrl.pathname.match(/^\/api\/admin\/orders\/(\d+)(?:\/([a-z]+))?$/);
+    if (adminOrderMatch) {
+        const orderId = Number(adminOrderMatch[1]);
+        const action = adminOrderMatch[2] ?? "detail";
+        if (action === "detail" && method === "GET") {
+            const bundle = await services.orderService.getAdminOrder(orderId);
+            if (!bundle) {
+                throw new HttpError(404, "سفارش پیدا نشد.");
+            }
+            sendJson(response, 200, {
+                order: await serializeAdminOrderDetail(services, bundle)
+            });
+            return;
+        }
+        if (action === "claim" && method === "POST") {
+            const claimed = await services.orderService.claimAdminOrder(orderId, user.id);
+            if (!claimed) {
+                await throwAdminOrderClaimError(services, orderId);
+            }
+            const bundle = await services.orderService.getAdminOrder(orderId);
+            if (!bundle) {
+                throw new HttpError(500, "سفارش claim شد اما قابل بازیابی نبود.");
+            }
+            sendJson(response, 200, {
+                order: await serializeAdminOrderDetail(services, bundle)
+            });
+            return;
+        }
+        if (action === "release" && method === "POST") {
+            const released = await services.orderService.releaseAdminOrder(orderId, user.id);
+            if (!released) {
+                await throwAdminOrderReleaseError(services, orderId, user.id);
+            }
+            const bundle = await services.orderService.getAdminOrder(orderId);
+            if (!bundle) {
+                throw new HttpError(500, "سفارش release شد اما قابل بازیابی نبود.");
+            }
+            sendJson(response, 200, {
+                order: await serializeAdminOrderDetail(services, bundle)
+            });
+            return;
+        }
+        if (["approve", "reject", "clarify"].includes(action) && method === "POST") {
+            const bundle = await requireAssignedAdminOrder(services, orderId, user.id);
+            if (action === "approve") {
+                const service = await services.serviceService.fulfillApprovedOrder(orderId);
+                const deliveryMessage = await services.serviceService.buildServiceDeliveryMessage(service.id);
+                await bot.telegram.sendMessage(bundle.user.telegramId, deliveryMessage);
+            }
+            else {
+                const body = await parseJsonBody(request);
+                const note = body.note?.trim();
+                if (!note) {
+                    throw new HttpError(400, "یادداشت برای این عملیات الزامی است.");
+                }
+                if (action === "reject") {
+                    await services.orderService.markRejected(orderId, note);
+                    await bot.telegram.sendMessage(bundle.user.telegramId, `سفارش شما رد شد.\nدلیل: ${note}`);
+                }
+                else {
+                    await services.orderService.markNeedsClarification(orderId, note);
+                    await bot.telegram.sendMessage(bundle.user.telegramId, `برای سفارش شما توضیح بیشتری لازم است:\n${note}`);
+                }
+            }
+            const updatedBundle = await services.orderService.getAdminOrder(orderId);
+            if (!updatedBundle) {
+                throw new HttpError(500, "سفارش به‌روزرسانی شد اما قابل بازیابی نبود.");
+            }
+            sendJson(response, 200, {
+                order: await serializeAdminOrderDetail(services, updatedBundle)
+            });
+            return;
+        }
+    }
+    if (requestUrl.pathname === "/api/admin/tickets" && method === "GET") {
+        const scope = readAdminScope(requestUrl);
+        const tickets = await services.supportService.listAdminTickets(scope, user.id);
+        sendJson(response, 200, {
+            tickets: await Promise.all(tickets.map((item) => serializeAdminTicketItem(services, item)))
+        });
+        return;
+    }
+    const adminTicketMatch = requestUrl.pathname.match(/^\/api\/admin\/tickets\/(\d+)(?:\/([a-z]+))?$/);
+    if (adminTicketMatch) {
+        const ticketId = Number(adminTicketMatch[1]);
+        const action = adminTicketMatch[2] ?? "detail";
+        if (action === "detail" && method === "GET") {
+            const bundle = await services.supportService.getAdminTicket(ticketId);
+            if (!bundle) {
+                throw new HttpError(404, "تیکت پیدا نشد.");
+            }
+            sendJson(response, 200, {
+                ticket: await serializeAdminTicketDetail(services, bundle)
+            });
+            return;
+        }
+        if (action === "claim" && method === "POST") {
+            const claimed = await services.supportService.claimAdminTicket(ticketId, user.id);
+            if (!claimed) {
+                await throwAdminTicketClaimError(services, ticketId);
+            }
+            const bundle = await services.supportService.getAdminTicket(ticketId);
+            if (!bundle) {
+                throw new HttpError(500, "تیکت claim شد اما قابل بازیابی نبود.");
+            }
+            sendJson(response, 200, {
+                ticket: await serializeAdminTicketDetail(services, bundle)
+            });
+            return;
+        }
+        if (action === "release" && method === "POST") {
+            const released = await services.supportService.releaseAdminTicket(ticketId, user.id);
+            if (!released) {
+                await throwAdminTicketReleaseError(services, ticketId, user.id);
+            }
+            const bundle = await services.supportService.getAdminTicket(ticketId);
+            if (!bundle) {
+                throw new HttpError(500, "تیکت release شد اما قابل بازیابی نبود.");
+            }
+            sendJson(response, 200, {
+                ticket: await serializeAdminTicketDetail(services, bundle)
+            });
+            return;
+        }
+        if (action === "reply" && method === "POST") {
+            const bundle = await requireAssignedAdminTicket(services, ticketId, user.id);
+            const body = await parseJsonBody(request);
+            const messageBody = body.body?.trim();
+            if (!messageBody) {
+                throw new HttpError(400, "متن پاسخ الزامی است.");
+            }
+            await services.supportService.addAdminReply(ticketId, user.telegramId, messageBody);
+            await bot.telegram.sendMessage(bundle.user.telegramId, `پاسخ پشتیبانی:\n${messageBody}`);
+            const updatedBundle = await services.supportService.getAdminTicket(ticketId);
+            if (!updatedBundle) {
+                throw new HttpError(500, "تیکت به‌روزرسانی شد اما قابل بازیابی نبود.");
+            }
+            sendJson(response, 201, {
+                ticket: await serializeAdminTicketDetail(services, updatedBundle)
+            });
+            return;
+        }
+        if (action === "close" && method === "POST") {
+            const bundle = await requireAssignedAdminTicket(services, ticketId, user.id);
+            await services.supportService.closeTicket(ticketId);
+            await bot.telegram.sendMessage(bundle.user.telegramId, "تیکت پشتیبانی شما بسته شد.");
+            const updatedBundle = await services.supportService.getAdminTicket(ticketId);
+            if (!updatedBundle) {
+                throw new HttpError(500, "تیکت بسته شد اما قابل بازیابی نبود.");
+            }
+            sendJson(response, 200, {
+                ticket: await serializeAdminTicketDetail(services, updatedBundle)
+            });
+            return;
+        }
+    }
+    throw new HttpError(404, "مسیر مدیریت پیدا نشد.");
+}
+function readAdminScope(requestUrl) {
+    const scope = requestUrl.searchParams.get("scope");
+    if (scope === "mine" || scope === "all" || scope === "unclaimed") {
+        return scope;
+    }
+    return "unclaimed";
+}
+async function requireAssignedAdminOrder(services, orderId, adminUserId) {
+    const bundle = await services.orderService.getAdminOrder(orderId);
+    if (!bundle) {
+        throw new HttpError(404, "سفارش پیدا نشد.");
+    }
+    if (bundle.order.assignedAdminUserId === null) {
+        throw new HttpError(403, "ابتدا این سفارش را claim کنید.");
+    }
+    if (bundle.order.assignedAdminUserId !== adminUserId) {
+        throw new HttpError(403, "این سفارش به ادمین دیگری اختصاص دارد.");
+    }
+    if (bundle.order.status !== "under_review") {
+        throw new HttpError(400, "این سفارش دیگر در صف بررسی نیست.");
+    }
+    return bundle;
+}
+async function requireAssignedAdminTicket(services, ticketId, adminUserId) {
+    const bundle = await services.supportService.getAdminTicket(ticketId);
+    if (!bundle) {
+        throw new HttpError(404, "تیکت پیدا نشد.");
+    }
+    if (bundle.ticket.assignedAdminUserId === null) {
+        throw new HttpError(403, "ابتدا این تیکت را claim کنید.");
+    }
+    if (bundle.ticket.assignedAdminUserId !== adminUserId) {
+        throw new HttpError(403, "این تیکت به ادمین دیگری اختصاص دارد.");
+    }
+    if (bundle.ticket.status !== "open") {
+        throw new HttpError(400, "این تیکت دیگر باز نیست.");
+    }
+    return bundle;
+}
+async function throwAdminOrderClaimError(services, orderId) {
+    const bundle = await services.orderService.getAdminOrder(orderId);
+    if (!bundle) {
+        throw new HttpError(404, "سفارش پیدا نشد.");
+    }
+    if (bundle.order.assignedAdminUserId !== null) {
+        throw new HttpError(409, "این سفارش قبلاً توسط ادمین دیگری claim شده است.");
+    }
+    throw new HttpError(400, "این سفارش در صف بررسی نیست.");
+}
+async function throwAdminOrderReleaseError(services, orderId, adminUserId) {
+    const bundle = await services.orderService.getAdminOrder(orderId);
+    if (!bundle) {
+        throw new HttpError(404, "سفارش پیدا نشد.");
+    }
+    if (bundle.order.assignedAdminUserId !== adminUserId) {
+        throw new HttpError(403, "فقط ادمین assignee می‌تواند این سفارش را release کند.");
+    }
+    throw new HttpError(400, "این سفارش قابل release نیست.");
+}
+async function throwAdminTicketClaimError(services, ticketId) {
+    const bundle = await services.supportService.getAdminTicket(ticketId);
+    if (!bundle) {
+        throw new HttpError(404, "تیکت پیدا نشد.");
+    }
+    if (bundle.ticket.assignedAdminUserId !== null) {
+        throw new HttpError(409, "این تیکت قبلاً توسط ادمین دیگری claim شده است.");
+    }
+    throw new HttpError(400, "این تیکت باز نیست.");
+}
+async function throwAdminTicketReleaseError(services, ticketId, adminUserId) {
+    const bundle = await services.supportService.getAdminTicket(ticketId);
+    if (!bundle) {
+        throw new HttpError(404, "تیکت پیدا نشد.");
+    }
+    if (bundle.ticket.assignedAdminUserId !== adminUserId) {
+        throw new HttpError(403, "فقط ادمین assignee می‌تواند این تیکت را release کند.");
+    }
+    throw new HttpError(400, "این تیکت قابل release نیست.");
+}
+async function serializeAdminOrderItem(services, item) {
+    return {
+        ...serializeOrderDetail(item),
+        user: serializeAdminUserSummary(item.user),
+        assignedAdminUserId: item.order.assignedAdminUserId,
+        assignedAdminDisplayName: await resolveAdminDisplayName(services, item.order.assignedAdminUserId),
+        claimedAt: item.order.claimedAt?.toISOString() ?? null,
+        preview: item.order.receiptText ?? (item.order.receiptFileId ? "رسید تصویری ثبت شده است." : "رسیدی ثبت نشده است.")
+    };
+}
+async function serializeAdminOrderDetail(services, item) {
+    return {
+        ...serializeOrderDetail(item),
+        user: serializeAdminUserSummary(item.user),
+        assignedAdminUserId: item.order.assignedAdminUserId,
+        assignedAdminDisplayName: await resolveAdminDisplayName(services, item.order.assignedAdminUserId),
+        claimedAt: item.order.claimedAt?.toISOString() ?? null,
+        preview: item.order.receiptText ?? (item.order.receiptFileId ? "رسید تصویری ثبت شده است." : "رسیدی ثبت نشده است.")
+    };
+}
+async function serializeAdminTicketItem(services, item) {
+    return {
+        ...serializeTicket(item.ticket),
+        user: serializeAdminUserSummary(item.user),
+        assignedAdminUserId: item.ticket.assignedAdminUserId,
+        assignedAdminDisplayName: await resolveAdminDisplayName(services, item.ticket.assignedAdminUserId),
+        claimedAt: item.ticket.claimedAt?.toISOString() ?? null,
+        preview: "برای مشاهده thread، تیکت را باز کنید."
+    };
+}
+async function serializeAdminTicketDetail(services, item) {
+    const latestMessage = item.messages[item.messages.length - 1] ?? null;
+    return {
+        ...serializeTicket(item.ticket),
+        user: serializeAdminUserSummary(item.user),
+        assignedAdminUserId: item.ticket.assignedAdminUserId,
+        assignedAdminDisplayName: await resolveAdminDisplayName(services, item.ticket.assignedAdminUserId),
+        claimedAt: item.ticket.claimedAt?.toISOString() ?? null,
+        preview: latestMessage?.body ?? "پیامی ثبت نشده است.",
+        messages: item.messages.map((message) => serializeTicketMessage(message))
+    };
+}
+function serializeAdminUserSummary(user) {
+    return {
+        id: user.id,
+        telegramId: user.telegramId,
+        username: user.username,
+        displayName: user.displayName
+    };
+}
+async function resolveAdminDisplayName(services, adminUserId) {
+    if (adminUserId === null) {
+        return null;
+    }
+    const admin = await services.userService.getById(adminUserId);
+    return admin?.displayName ?? `Admin #${adminUserId}`;
 }
 async function authenticateUser(req, config, services) {
     const session = (0, session_1.readSessionFromCookie)(req.headers.cookie, config);

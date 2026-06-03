@@ -31,7 +31,11 @@ export function buildServiceKeyboard(serviceId: number) {
   ]);
 }
 
-export function buildAdminOrderKeyboard(orderId: number, telegramUserId: number) {
+export function buildAdminOrderKeyboard(orderId: number, telegramUserId: number, webAppBaseUrl?: string) {
+  if (canUseWebAppButton(webAppBaseUrl)) {
+    return buildAdminPanelKeyboard(webAppBaseUrl, "orders", orderId);
+  }
+
   return Markup.inlineKeyboard([
     [
       Markup.button.callback("تایید", `ord:approve:${orderId}`),
@@ -44,7 +48,11 @@ export function buildAdminOrderKeyboard(orderId: number, telegramUserId: number)
   ]);
 }
 
-export function buildAdminTicketKeyboard(ticketId: number, telegramUserId: number) {
+export function buildAdminTicketKeyboard(ticketId: number, telegramUserId: number, webAppBaseUrl?: string) {
+  if (canUseWebAppButton(webAppBaseUrl)) {
+    return buildAdminPanelKeyboard(webAppBaseUrl, "tickets", ticketId);
+  }
+
   return Markup.inlineKeyboard([
     [
       Markup.button.callback("پاسخ", `ticket:reply:${ticketId}`),
@@ -54,11 +62,42 @@ export function buildAdminTicketKeyboard(ticketId: number, telegramUserId: numbe
   ]);
 }
 
-export function buildAdminMenuKeyboard() {
+export function buildAdminMenuKeyboard(webAppBaseUrl?: string) {
+  if (canUseWebAppButton(webAppBaseUrl)) {
+    return Markup.inlineKeyboard([
+      [Markup.button.webApp("باز کردن پنل مدیریت", buildAdminPanelUrl(webAppBaseUrl))]
+    ]);
+  }
+
   return Markup.inlineKeyboard([
     [
       Markup.button.callback("سفارش های باز", "adm:orders"),
       Markup.button.callback("تیکت های باز", "adm:tickets")
     ]
   ]);
+}
+
+function buildAdminPanelKeyboard(webAppBaseUrl: string, tab: "orders" | "tickets", itemId?: number) {
+  return Markup.inlineKeyboard([
+    [Markup.button.webApp("باز کردن در پنل مدیریت", buildAdminPanelUrl(webAppBaseUrl, tab, itemId))]
+  ]);
+}
+
+function buildAdminPanelUrl(webAppBaseUrl: string, tab?: "orders" | "tickets", itemId?: number) {
+  const url = new URL(webAppBaseUrl);
+  url.searchParams.set("mode", "admin");
+
+  if (tab) {
+    url.searchParams.set("tab", tab);
+  }
+
+  if (itemId !== undefined) {
+    url.searchParams.set("id", String(itemId));
+  }
+
+  return url.toString();
+}
+
+function canUseWebAppButton(webAppBaseUrl?: string): webAppBaseUrl is string {
+  return Boolean(webAppBaseUrl?.startsWith("https://"));
 }

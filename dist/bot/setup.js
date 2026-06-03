@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildBot = buildBot;
 const keyboards_1 = require("./keyboards");
-const logger_1 = require("../infra/logger");
 const format_1 = require("../utils/format");
 const notifications_1 = require("./notifications");
 function buildBot(bot, services) {
@@ -37,7 +36,7 @@ function buildBot(bot, services) {
         }
         const pendingOrders = await services.orderService.listPendingOrders();
         const openTickets = await services.supportService.listOpenTickets();
-        await ctx.reply(`پنل ادمین\nسفارش های باز: ${pendingOrders.length}\nتیکت های باز: ${openTickets.length}`, (0, keyboards_1.buildAdminMenuKeyboard)());
+        await ctx.reply(`پنل ادمین\nسفارش های باز: ${pendingOrders.length}\nتیکت های باز: ${openTickets.length}`, (0, keyboards_1.buildAdminMenuKeyboard)(services.config.webAppBaseUrl));
     });
     bot.on("callback_query", async (ctx, next) => {
         if (!("data" in ctx.callbackQuery)) {
@@ -118,71 +117,28 @@ function buildBot(bot, services) {
             await ctx.answerCbQuery("دسترسی ندارید.");
             return;
         }
-        const orderId = Number(ctx.match[1]);
-        try {
-            const service = await services.serviceService.fulfillApprovedOrder(orderId);
-            const message = await services.serviceService.buildServiceDeliveryMessage(service.id);
-            const bundle = await services.orderService.getOrderWithRelations(orderId);
-            if (bundle) {
-                await bot.telegram.sendMessage(bundle.user.telegramId, message);
-            }
-            await ctx.reply("سفارش تایید و سرویس صادر شد.");
-            await ctx.answerCbQuery("انجام شد.");
-        }
-        catch (error) {
-            logger_1.logger.error("Order fulfillment failed", {
-                orderId,
-                error: error instanceof Error ? error.message : String(error)
-            });
-            await ctx.reply(`صدور سرویس ناموفق بود: ${error instanceof Error ? error.message : "unknown error"}`);
-            await ctx.answerCbQuery("خطا");
-        }
+        await sendAdminPanelRedirect(ctx, services, "orders", Number(ctx.match[1]));
     });
     bot.action(/^ord:(reject|clarify):(\d+)$/, async (ctx) => {
         if (!(await services.userService.isAdminTelegramId(ctx.from.id))) {
             await ctx.answerCbQuery("دسترسی ندارید.");
             return;
         }
-        ctx.session.pendingAction = {
-            kind: "admin_order_note",
-            orderId: Number(ctx.match[2]),
-            mode: ctx.match[1]
-        };
-        await ctx.reply(ctx.match[1] === "reject" ? "دلیل رد سفارش را ارسال کنید." : "متن درخواست توضیح را ارسال کنید.");
-        await ctx.answerCbQuery();
+        await sendAdminPanelRedirect(ctx, services, "orders", Number(ctx.match[2]));
     });
     bot.action(/^ticket:reply:(\d+)$/, async (ctx) => {
         if (!(await services.userService.isAdminTelegramId(ctx.from.id))) {
             await ctx.answerCbQuery("دسترسی ندارید.");
             return;
         }
-        const bundle = await services.supportService.getTicketWithUser(Number(ctx.match[1]));
-        if (!bundle) {
-            await ctx.answerCbQuery("تیکت پیدا نشد.");
-            return;
-        }
-        ctx.session.pendingAction = {
-            kind: "admin_ticket_reply",
-            ticketId: bundle.ticket.id,
-            userTelegramId: bundle.user.telegramId
-        };
-        await ctx.reply("پاسخ ادمین را ارسال کنید.");
-        await ctx.answerCbQuery();
+        await sendAdminPanelRedirect(ctx, services, "tickets", Number(ctx.match[1]));
     });
     bot.action(/^ticket:close:(\d+)$/, async (ctx) => {
         if (!(await services.userService.isAdminTelegramId(ctx.from.id))) {
             await ctx.answerCbQuery("دسترسی ندارید.");
             return;
         }
-        const bundle = await services.supportService.getTicketWithUser(Number(ctx.match[1]));
-        if (!bundle) {
-            await ctx.answerCbQuery("تیکت پیدا نشد.");
-            return;
-        }
-        await services.supportService.closeTicket(bundle.ticket.id);
-        await bot.telegram.sendMessage(bundle.user.telegramId, "تیکت پشتیبانی شما بسته شد.");
-        await ctx.reply("تیکت بسته شد.");
-        await ctx.answerCbQuery();
+        await sendAdminPanelRedirect(ctx, services, "tickets", Number(ctx.match[1]));
     });
     bot.action(/^adm:orders$/, async (ctx) => {
         if (!(await services.userService.isAdminTelegramId(ctx.from.id))) {
@@ -196,7 +152,7 @@ function buildBot(bot, services) {
             return;
         }
         for (const item of pendingOrders) {
-            await ctx.reply((0, notifications_1.describeOrder)(item.order.id, item.user.displayName, item.user.telegramId, item.plan.title, item.order.receiptText), (0, keyboards_1.buildAdminOrderKeyboard)(item.order.id, item.user.telegramId));
+            await ctx.reply((0, notifications_1.describeOrder)(item.order.id, item.user.displayName, item.user.telegramId, item.plan.title, item.order.receiptText), (0, keyboards_1.buildAdminOrderKeyboard)(item.order.id, item.user.telegramId, services.config.webAppBaseUrl));
         }
         await ctx.answerCbQuery();
     });
@@ -212,7 +168,7 @@ function buildBot(bot, services) {
             return;
         }
         for (const item of openTickets) {
-            await ctx.reply(`تیکت #${item.ticket.id}\nکاربر: ${item.user.displayName}\nتلگرام: ${item.user.telegramId}\nآخرین بروزرسانی: ${(0, format_1.formatDate)(item.ticket.updatedAt)}`, (0, keyboards_1.buildAdminTicketKeyboard)(item.ticket.id, item.user.telegramId));
+            await ctx.reply(`تیکت #${item.ticket.id}\nکاربر: ${item.user.displayName}\nتلگرام: ${item.user.telegramId}\nآخرین بروزرسانی: ${(0, format_1.formatDate)(item.ticket.updatedAt)}`, (0, keyboards_1.buildAdminTicketKeyboard)(item.ticket.id, item.user.telegramId, services.config.webAppBaseUrl));
         }
         await ctx.answerCbQuery();
     });
@@ -279,59 +235,6 @@ function buildBot(bot, services) {
             await (0, notifications_1.notifyAdminsOfTicket)(bot, services, pendingAction.ticketId, ctx.message.text.trim());
             return;
         }
-        if (pendingAction.kind === "admin_order_note") {
-            if (!(await services.userService.isAdminTelegramId(ctx.from.id))) {
-                ctx.session.pendingAction = undefined;
-                await ctx.reply("دسترسی ادمین ندارید.");
-                return;
-            }
-            if (!("text" in ctx.message) || !ctx.message.text.trim()) {
-                await ctx.reply("متن توضیح را ارسال کنید.");
-                return;
-            }
-            if (isMainMenuText(ctx.message.text.trim())) {
-                await ctx.reply("متن دلیل را ارسال کنید یا /cancel بزنید.");
-                return;
-            }
-            const bundle = await services.orderService.getOrderWithRelations(pendingAction.orderId);
-            if (!bundle) {
-                ctx.session.pendingAction = undefined;
-                await ctx.reply("سفارش پیدا نشد.");
-                return;
-            }
-            if (pendingAction.mode === "reject") {
-                await services.orderService.markRejected(bundle.order.id, ctx.message.text.trim());
-                await bot.telegram.sendMessage(bundle.user.telegramId, `سفارش شما رد شد.\nدلیل: ${ctx.message.text.trim()}`);
-                await ctx.reply("سفارش رد شد.");
-            }
-            else {
-                await services.orderService.markNeedsClarification(bundle.order.id, ctx.message.text.trim());
-                await bot.telegram.sendMessage(bundle.user.telegramId, `برای سفارش شما توضیح بیشتری لازم است:\n${ctx.message.text.trim()}`);
-                await ctx.reply("درخواست توضیح برای کاربر ارسال شد.");
-            }
-            ctx.session.pendingAction = undefined;
-            return;
-        }
-        if (pendingAction.kind === "admin_ticket_reply") {
-            if (!(await services.userService.isAdminTelegramId(ctx.from.id))) {
-                ctx.session.pendingAction = undefined;
-                await ctx.reply("دسترسی ادمین ندارید.");
-                return;
-            }
-            if (!("text" in ctx.message) || !ctx.message.text.trim()) {
-                await ctx.reply("پاسخ ادمین باید متنی باشد.");
-                return;
-            }
-            if (isMainMenuText(ctx.message.text.trim())) {
-                await ctx.reply("پاسخ را ارسال کنید یا /cancel بزنید.");
-                return;
-            }
-            await services.supportService.addAdminReply(pendingAction.ticketId, ctx.from.id, ctx.message.text.trim());
-            ctx.session.pendingAction = undefined;
-            await bot.telegram.sendMessage(pendingAction.userTelegramId, `پاسخ پشتیبانی:\n${ctx.message.text.trim()}`);
-            await ctx.reply("پاسخ برای کاربر ارسال شد.");
-            return;
-        }
     });
     bot.hears("خرید سرویس", async (ctx) => {
         await ensureKnownUser(ctx, services);
@@ -379,6 +282,21 @@ function buildBot(bot, services) {
         await ctx.reply(`تیکت #${ticket.id} آماده است. پیام خود را ارسال کنید.`);
         await (0, notifications_1.notifyAdminsOfTicket)(bot, services, ticket.id, `تیکت توسط ${user.displayName} باز شد.`);
     });
+}
+async function sendAdminPanelRedirect(ctx, services, tab, itemId) {
+    if (isHttpsWebAppUrl(services.config.webAppBaseUrl)) {
+        await ctx.reply("عملیات ادمین از پنل مدیریت انجام می‌شود. این مورد را از پنل باز کنید.", tab === "orders"
+            ? (0, keyboards_1.buildAdminOrderKeyboard)(itemId, 0, services.config.webAppBaseUrl)
+            : (0, keyboards_1.buildAdminTicketKeyboard)(itemId, 0, services.config.webAppBaseUrl));
+    }
+    else {
+        await ctx.reply([
+            "عملیات ادمین از پنل مدیریت انجام می‌شود.",
+            "در محیط لوکال، پنل را با این آدرس باز کنید:",
+            `${services.config.webAppBaseUrl}/?mode=admin&tab=${tab}&id=${itemId}`
+        ].join("\n"));
+    }
+    await ctx.answerCbQuery("از پنل مدیریت استفاده کنید.");
 }
 async function ensureKnownUser(ctx, services) {
     if (!ctx.from) {

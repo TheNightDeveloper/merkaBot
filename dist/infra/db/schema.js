@@ -31,6 +31,8 @@ exports.orders = (0, sqlite_core_1.sqliteTable)("orders", {
     receiptText: (0, sqlite_core_1.text)("receipt_text"),
     adminNote: (0, sqlite_core_1.text)("admin_note"),
     targetServiceId: (0, sqlite_core_1.integer)("target_service_id"),
+    assignedAdminUserId: (0, sqlite_core_1.integer)("assigned_admin_user_id").references(() => exports.users.id),
+    claimedAt: (0, sqlite_core_1.integer)("claimed_at", { mode: "timestamp_ms" }),
     createdAt: (0, sqlite_core_1.integer)("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: (0, sqlite_core_1.integer)("updated_at", { mode: "timestamp_ms" }).notNull()
 });
@@ -58,6 +60,8 @@ exports.tickets = (0, sqlite_core_1.sqliteTable)("tickets", {
     id: (0, sqlite_core_1.integer)("id").primaryKey({ autoIncrement: true }),
     userId: (0, sqlite_core_1.integer)("user_id").notNull().references(() => exports.users.id),
     status: (0, sqlite_core_1.text)("status").$type().notNull(),
+    assignedAdminUserId: (0, sqlite_core_1.integer)("assigned_admin_user_id").references(() => exports.users.id),
+    claimedAt: (0, sqlite_core_1.integer)("claimed_at", { mode: "timestamp_ms" }),
     createdAt: (0, sqlite_core_1.integer)("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: (0, sqlite_core_1.integer)("updated_at", { mode: "timestamp_ms" }).notNull(),
     closedAt: (0, sqlite_core_1.integer)("closed_at", { mode: "timestamp_ms" })

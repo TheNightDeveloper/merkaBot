@@ -1,10 +1,12 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 
 import type { AppDatabase } from "../../infra/db/client";
 import { orderColumns, planColumns, serviceColumns, userColumns } from "../../infra/db/selectors";
 import { withoutUndefined } from "../../infra/db/sanitize";
 import { orders, plans, services, users } from "../../infra/db/schema";
 import type { OrderKind, OrderStatus } from "../../types";
+
+export type AdminOrderScope = "unclaimed" | "mine" | "all";
 
 export class OrderService {
   constructor(
@@ -137,6 +139,18 @@ export class OrderService {
   }
 
   async listPendingOrders() {
+    return this.listAdminOrders("all", 0);
+  }
+
+  async listAdminOrders(scope: AdminOrderScope, adminUserId: number) {
+    const filters = [eq(orders.status, "under_review")];
+
+    if (scope === "unclaimed") {
+      filters.push(isNull(orders.assignedAdminUserId));
+    } else if (scope === "mine") {
+      filters.push(eq(orders.assignedAdminUserId, adminUserId));
+    }
+
     return this.db
       .select({
         order: orderColumns,
@@ -146,8 +160,64 @@ export class OrderService {
       .from(orders)
       .innerJoin(plans, eq(orders.planCode, plans.code))
       .innerJoin(users, eq(orders.userId, users.id))
-      .where(eq(orders.status, "under_review"))
+      .where(and(...filters))
       .orderBy(desc(orders.createdAt));
+  }
+
+  async getAdminOrder(orderId: number) {
+    return this.getOrderWithRelations(orderId);
+  }
+
+  async claimAdminOrder(orderId: number, adminUserId: number) {
+    const now = new Date();
+    const [updated] = await this.db
+      .update(orders)
+      .set(withoutUndefined({
+        assignedAdminUserId: adminUserId,
+        claimedAt: now,
+        updatedAt: now
+      }))
+      .where(and(eq(orders.id, orderId), eq(orders.status, "under_review"), isNull(orders.assignedAdminUserId)))
+      .returning();
+    await this.persist();
+
+    return updated ?? null;
+  }
+
+  async releaseAdminOrder(orderId: number, adminUserId: number) {
+    const now = new Date();
+    const [updated] = await this.db
+      .update(orders)
+      .set(withoutUndefined({
+        assignedAdminUserId: null,
+        claimedAt: null,
+        updatedAt: now
+      }))
+      .where(and(eq(orders.id, orderId), eq(orders.assignedAdminUserId, adminUserId)))
+      .returning();
+    await this.persist();
+
+    return updated ?? null;
+  }
+
+  async isOrderAssignedToAdmin(orderId: number, adminUserId: number) {
+    const rows = await this.db
+      .select({ id: orders.id })
+      .from(orders)
+      .where(and(eq(orders.id, orderId), eq(orders.assignedAdminUserId, adminUserId)))
+      .limit(1);
+
+    return rows.length > 0;
+  }
+
+  async countAdminQueues(adminUserId: number) {
+    const all = await this.listAdminOrders("all", adminUserId);
+
+    return {
+      total: all.length,
+      mine: all.filter((item) => item.order.assignedAdminUserId === adminUserId).length,
+      unclaimed: all.filter((item) => item.order.assignedAdminUserId === null).length
+    };
   }
 
   private async transition(orderId: number, status: OrderStatus, adminNote?: string) {

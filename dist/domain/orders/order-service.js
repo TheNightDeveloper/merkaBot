@@ -116,6 +116,16 @@ class OrderService {
             .orderBy((0, drizzle_orm_1.desc)(schema_1.orders.createdAt));
     }
     async listPendingOrders() {
+        return this.listAdminOrders("all", 0);
+    }
+    async listAdminOrders(scope, adminUserId) {
+        const filters = [(0, drizzle_orm_1.eq)(schema_1.orders.status, "under_review")];
+        if (scope === "unclaimed") {
+            filters.push((0, drizzle_orm_1.isNull)(schema_1.orders.assignedAdminUserId));
+        }
+        else if (scope === "mine") {
+            filters.push((0, drizzle_orm_1.eq)(schema_1.orders.assignedAdminUserId, adminUserId));
+        }
         return this.db
             .select({
             order: selectors_1.orderColumns,
@@ -125,8 +135,55 @@ class OrderService {
             .from(schema_1.orders)
             .innerJoin(schema_1.plans, (0, drizzle_orm_1.eq)(schema_1.orders.planCode, schema_1.plans.code))
             .innerJoin(schema_1.users, (0, drizzle_orm_1.eq)(schema_1.orders.userId, schema_1.users.id))
-            .where((0, drizzle_orm_1.eq)(schema_1.orders.status, "under_review"))
+            .where((0, drizzle_orm_1.and)(...filters))
             .orderBy((0, drizzle_orm_1.desc)(schema_1.orders.createdAt));
+    }
+    async getAdminOrder(orderId) {
+        return this.getOrderWithRelations(orderId);
+    }
+    async claimAdminOrder(orderId, adminUserId) {
+        const now = new Date();
+        const [updated] = await this.db
+            .update(schema_1.orders)
+            .set((0, sanitize_1.withoutUndefined)({
+            assignedAdminUserId: adminUserId,
+            claimedAt: now,
+            updatedAt: now
+        }))
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.orders.id, orderId), (0, drizzle_orm_1.eq)(schema_1.orders.status, "under_review"), (0, drizzle_orm_1.isNull)(schema_1.orders.assignedAdminUserId)))
+            .returning();
+        await this.persist();
+        return updated ?? null;
+    }
+    async releaseAdminOrder(orderId, adminUserId) {
+        const now = new Date();
+        const [updated] = await this.db
+            .update(schema_1.orders)
+            .set((0, sanitize_1.withoutUndefined)({
+            assignedAdminUserId: null,
+            claimedAt: null,
+            updatedAt: now
+        }))
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.orders.id, orderId), (0, drizzle_orm_1.eq)(schema_1.orders.assignedAdminUserId, adminUserId)))
+            .returning();
+        await this.persist();
+        return updated ?? null;
+    }
+    async isOrderAssignedToAdmin(orderId, adminUserId) {
+        const rows = await this.db
+            .select({ id: schema_1.orders.id })
+            .from(schema_1.orders)
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.orders.id, orderId), (0, drizzle_orm_1.eq)(schema_1.orders.assignedAdminUserId, adminUserId)))
+            .limit(1);
+        return rows.length > 0;
+    }
+    async countAdminQueues(adminUserId) {
+        const all = await this.listAdminOrders("all", adminUserId);
+        return {
+            total: all.length,
+            mine: all.filter((item) => item.order.assignedAdminUserId === adminUserId).length,
+            unclaimed: all.filter((item) => item.order.assignedAdminUserId === null).length
+        };
     }
     async transition(orderId, status, adminNote) {
         const now = new Date();

@@ -11,7 +11,7 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: path.resolve(currentDir, "../dist/web"),
-    emptyOutDir: false
+    emptyOutDir: true
   },
   server: {
     host: "0.0.0.0",

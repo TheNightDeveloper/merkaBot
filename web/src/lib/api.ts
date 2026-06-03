@@ -1,4 +1,4 @@
-import type { OrderDto, PaymentInfo, PlanDto, ServiceDto, TicketDto, TicketMessageDto, UserDto } from "./types";
+import type { AdminOrderDto, AdminQueueSummaryDto, AdminScope, AdminTicketDto, OrderDto, PaymentInfo, PlanDto, ServiceDto, TicketDto, TicketMessageDto, UserDto } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -76,5 +76,42 @@ export const api = {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ body })
-    })
+    }),
+  admin: {
+    getSummary: () => request<{ summary: AdminQueueSummaryDto }>("/api/admin/summary"),
+    getOrders: (scope: AdminScope) => request<{ orders: AdminOrderDto[] }>(`/api/admin/orders?scope=${scope}`),
+    getOrder: (orderId: number) => request<{ order: AdminOrderDto }>(`/api/admin/orders/${orderId}`),
+    claimOrder: (orderId: number) =>
+      request<{ order: AdminOrderDto }>(`/api/admin/orders/${orderId}/claim`, { method: "POST" }),
+    releaseOrder: (orderId: number) =>
+      request<{ order: AdminOrderDto }>(`/api/admin/orders/${orderId}/release`, { method: "POST" }),
+    approveOrder: (orderId: number) =>
+      request<{ order: AdminOrderDto }>(`/api/admin/orders/${orderId}/approve`, { method: "POST" }),
+    rejectOrder: (orderId: number, note: string) =>
+      request<{ order: AdminOrderDto }>(`/api/admin/orders/${orderId}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note })
+      }),
+    clarifyOrder: (orderId: number, note: string) =>
+      request<{ order: AdminOrderDto }>(`/api/admin/orders/${orderId}/clarify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note })
+      }),
+    getTickets: (scope: AdminScope) => request<{ tickets: AdminTicketDto[] }>(`/api/admin/tickets?scope=${scope}`),
+    getTicket: (ticketId: number) => request<{ ticket: AdminTicketDto }>(`/api/admin/tickets/${ticketId}`),
+    claimTicket: (ticketId: number) =>
+      request<{ ticket: AdminTicketDto }>(`/api/admin/tickets/${ticketId}/claim`, { method: "POST" }),
+    releaseTicket: (ticketId: number) =>
+      request<{ ticket: AdminTicketDto }>(`/api/admin/tickets/${ticketId}/release`, { method: "POST" }),
+    replyTicket: (ticketId: number, body: string) =>
+      request<{ ticket: AdminTicketDto }>(`/api/admin/tickets/${ticketId}/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body })
+      }),
+    closeTicket: (ticketId: number) =>
+      request<{ ticket: AdminTicketDto }>(`/api/admin/tickets/${ticketId}/close`, { method: "POST" })
+  }
 };

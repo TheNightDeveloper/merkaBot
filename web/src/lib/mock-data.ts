@@ -1,6 +1,6 @@
 import type { AppSnapshot } from "./types";
 
-export function createPreviewSnapshot(): AppSnapshot {
+export function createPreviewSnapshot(options?: { admin?: boolean }): AppSnapshot {
   return {
     preview: true,
     user: {
@@ -8,7 +8,7 @@ export function createPreviewSnapshot(): AppSnapshot {
       telegramId: 0,
       username: "preview",
       displayName: "پیش‌نمایش MerkaBot",
-      isAdmin: false,
+      isAdmin: options?.admin ?? false,
       trialUsed: false,
       createdAt: new Date().toISOString()
     },

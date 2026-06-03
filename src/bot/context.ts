@@ -10,24 +10,10 @@ type PendingSupportMessageAction = {
   ticketId: number;
 };
 
-type PendingAdminOrderNoteAction = {
-  kind: "admin_order_note";
-  orderId: number;
-  mode: "reject" | "clarify";
-};
-
-type PendingAdminTicketReplyAction = {
-  kind: "admin_ticket_reply";
-  ticketId: number;
-  userTelegramId: number;
-};
-
 export type BotSession = {
   pendingAction?:
     | PendingReceiptAction
-    | PendingSupportMessageAction
-    | PendingAdminOrderNoteAction
-    | PendingAdminTicketReplyAction;
+    | PendingSupportMessageAction;
 };
 
 export type BotContext = Context & {

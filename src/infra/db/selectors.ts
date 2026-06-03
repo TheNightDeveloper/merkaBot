@@ -31,6 +31,8 @@ export const orderColumns = {
   receiptText: orders.receiptText,
   adminNote: orders.adminNote,
   targetServiceId: orders.targetServiceId,
+  assignedAdminUserId: orders.assignedAdminUserId,
+  claimedAt: orders.claimedAt,
   createdAt: orders.createdAt,
   updatedAt: orders.updatedAt
 };
@@ -60,6 +62,8 @@ export const ticketColumns = {
   id: tickets.id,
   userId: tickets.userId,
   status: tickets.status,
+  assignedAdminUserId: tickets.assignedAdminUserId,
+  claimedAt: tickets.claimedAt,
   createdAt: tickets.createdAt,
   updatedAt: tickets.updatedAt,
   closedAt: tickets.closedAt

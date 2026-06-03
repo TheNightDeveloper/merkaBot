@@ -1,10 +1,12 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 
 import type { AppDatabase } from "../../infra/db/client";
 import { ticketColumns, ticketMessageColumns, userColumns } from "../../infra/db/selectors";
 import { withoutUndefined } from "../../infra/db/sanitize";
 import { ticketMessages, tickets, users } from "../../infra/db/schema";
 import { UserService } from "../users/user-service";
+
+export type AdminTicketScope = "unclaimed" | "mine" | "all";
 
 export class SupportService {
   constructor(
@@ -118,6 +120,18 @@ export class SupportService {
   }
 
   async listOpenTickets() {
+    return this.listAdminTickets("all", 0);
+  }
+
+  async listAdminTickets(scope: AdminTicketScope, adminUserId: number) {
+    const filters = [eq(tickets.status, "open")];
+
+    if (scope === "unclaimed") {
+      filters.push(isNull(tickets.assignedAdminUserId));
+    } else if (scope === "mine") {
+      filters.push(eq(tickets.assignedAdminUserId, adminUserId));
+    }
+
     return this.db
       .select({
         ticket: ticketColumns,
@@ -125,8 +139,18 @@ export class SupportService {
       })
       .from(tickets)
       .innerJoin(users, eq(tickets.userId, users.id))
-      .where(eq(tickets.status, "open"))
+      .where(and(...filters))
       .orderBy(desc(tickets.updatedAt));
+  }
+
+  async countAdminQueues(adminUserId: number) {
+    const all = await this.listAdminTickets("all", adminUserId);
+
+    return {
+      total: all.length,
+      mine: all.filter((item) => item.ticket.assignedAdminUserId === adminUserId).length,
+      unclaimed: all.filter((item) => item.ticket.assignedAdminUserId === null).length
+    };
   }
 
   async getTicketWithUser(ticketId: number) {
@@ -140,6 +164,67 @@ export class SupportService {
       .where(eq(tickets.id, ticketId))
       .limit(1)
       .then((rows) => rows[0] ?? null);
+  }
+
+  async getAdminTicket(ticketId: number) {
+    const bundle = await this.getTicketWithUser(ticketId);
+
+    if (!bundle) {
+      return null;
+    }
+
+    const messages = await this.db
+      .select(ticketMessageColumns)
+      .from(ticketMessages)
+      .where(eq(ticketMessages.ticketId, bundle.ticket.id))
+      .orderBy(ticketMessages.createdAt);
+
+    return {
+      ...bundle,
+      messages
+    };
+  }
+
+  async claimAdminTicket(ticketId: number, adminUserId: number) {
+    const now = new Date();
+    const [updated] = await this.db
+      .update(tickets)
+      .set(withoutUndefined({
+        assignedAdminUserId: adminUserId,
+        claimedAt: now,
+        updatedAt: now
+      }))
+      .where(and(eq(tickets.id, ticketId), eq(tickets.status, "open"), isNull(tickets.assignedAdminUserId)))
+      .returning();
+    await this.persist();
+
+    return updated ?? null;
+  }
+
+  async releaseAdminTicket(ticketId: number, adminUserId: number) {
+    const now = new Date();
+    const [updated] = await this.db
+      .update(tickets)
+      .set(withoutUndefined({
+        assignedAdminUserId: null,
+        claimedAt: null,
+        updatedAt: now
+      }))
+      .where(and(eq(tickets.id, ticketId), eq(tickets.assignedAdminUserId, adminUserId)))
+      .returning();
+    await this.persist();
+
+    return updated ?? null;
+  }
+
+  async isTicketAssignedToAdmin(ticketId: number, adminUserId: number) {
+    const rows = await this.db
+      .select({ id: tickets.id })
+      .from(tickets)
+      .where(and(eq(tickets.id, ticketId), eq(tickets.assignedAdminUserId, adminUserId)))
+      .limit(1);
+
+    return rows.length > 0;
   }
 
   async listTicketsForUser(userId: number) {
